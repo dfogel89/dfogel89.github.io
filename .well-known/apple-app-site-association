@@ -1,0 +1,37 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "K87H4YTGDW.com.dfogel.crosswars",
+        "paths": [
+          "/crosswars/*"
+        ]
+      },
+      {
+        "appID": "K87H4YTGDW.com.dfogel.battlesudoku",
+        "paths": [
+          "/battlesudoku/*"
+        ]
+      },
+      {
+        "appID": "K87H4YTGDW.com.dfogel.flipdeck",
+        "paths": [
+          "/flipdeck/*"
+        ]
+      },
+      {
+        "appID": "K87H4YTGDW.com.dfogel.bidscrabble",
+        "paths": [
+          "/bidscrabble/*"
+        ]
+      },
+      {
+        "appID": "K87H4YTGDW.com.dfogel.superchess",
+        "paths": [
+          "/superchess/*"
+        ]
+      }
+    ]
+  }
+}

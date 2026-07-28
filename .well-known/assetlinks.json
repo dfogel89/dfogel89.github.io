@@ -1,0 +1,62 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dfogel.crosswars",
+      "sha256_cert_fingerprints": [
+        "54:85:8A:28:33:1F:ED:3D:CF:B1:31:31:51:ED:DE:ED:F1:74:96:45:B3:9F:0D:C8:9C:9B:E5:CE:3C:2A:58:F8"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dfogel.battlesudoku",
+      "sha256_cert_fingerprints": [
+        "54:85:8A:28:33:1F:ED:3D:CF:B1:31:31:51:ED:DE:ED:F1:74:96:45:B3:9F:0D:C8:9C:9B:E5:CE:3C:2A:58:F8"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dfogel.flipdeck",
+      "sha256_cert_fingerprints": [
+        "54:85:8A:28:33:1F:ED:3D:CF:B1:31:31:51:ED:DE:ED:F1:74:96:45:B3:9F:0D:C8:9C:9B:E5:CE:3C:2A:58:F8"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dfogel.bidscrabble",
+      "sha256_cert_fingerprints": [
+        "54:85:8A:28:33:1F:ED:3D:CF:B1:31:31:51:ED:DE:ED:F1:74:96:45:B3:9F:0D:C8:9C:9B:E5:CE:3C:2A:58:F8"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dfogel.superchess",
+      "sha256_cert_fingerprints": [
+        "54:85:8A:28:33:1F:ED:3D:CF:B1:31:31:51:ED:DE:ED:F1:74:96:45:B3:9F:0D:C8:9C:9B:E5:CE:3C:2A:58:F8"
+      ]
+    }
+  }
+]
