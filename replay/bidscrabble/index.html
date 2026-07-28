@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bid Scrabble replay</title>
+<meta name="description" content="Watch a game of Bid Scrabble play out move by move.">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:#0b0e14; color:#e6e9ef; padding:18px 14px 40px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { width:100%; max-width:520px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 2px; }
+  .sub { color:#8a93a6; font-size:13px; margin:0 0 16px; }
+  .panel { background:#141925; border:1px solid #2a3142; border-radius:12px; padding:13px; margin-bottom:11px; }
+  .lbl { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#8a93a6; }
+  .names { display:flex; justify-content:space-between; font-weight:800; font-size:13px; margin-bottom:6px; }
+  .bar { height:16px; border-radius:8px; overflow:hidden; display:flex; background:#60a5fa; }
+  .bar > div { height:100%; background:#f472b6; }
+  .under { display:flex; justify-content:space-between; align-items:center; margin-top:5px; font-size:11px; color:#8a93a6; }
+  .under b { font-size:13px; }
+  #graph { height:38px; display:flex; border-radius:6px; overflow:hidden; margin-top:12px; position:relative; background:#60a5fa; }
+  #graph .col { flex:1 1 0; display:flex; align-items:flex-end; opacity:.72; position:relative; }
+  #graph .col.on { opacity:1; outline:1.5px solid #eef3ff; outline-offset:-1.5px; }
+  #graph .col i { display:block; width:100%; background:#f472b6; }
+  #board { display:grid; grid-template-columns:repeat(15,1fr); margin:0 auto 11px; width:min(100%,460px);
+    border:1px solid #2a3142; border-radius:6px; overflow:hidden; }
+  .c { aspect-ratio:1; display:flex; align-items:center; justify-content:center; position:relative;
+    border:0.25px solid #0b0e14; font-weight:800; font-size:min(3.4vw,15px); color:#cdd6e6; }
+  .c.t { background:#e9dcc3; color:#1a1206; }
+  .c.on { border:1.5px solid #34d399; }
+  .c i { position:absolute; bottom:-1px; right:1px; font-size:min(1.8vw,8px); font-style:normal; }
+  .racks .r { margin-top:8px; }
+  .racks .rh { display:flex; justify-content:space-between; align-items:center; }
+  .racks .tiles { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+  .racks .tl { width:28px; height:32px; border-radius:6px; background:#e9dcc3; color:#1a1206;
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; position:relative; }
+  .racks .tl i { position:absolute; bottom:0; right:2px; font-size:7px; font-style:normal; }
+  .controls { display:flex; gap:8px; align-items:center; }
+  button { font:inherit; border:0; border-radius:10px; padding:11px 12px; background:#0f1420; color:#e6e9ef;
+    font-weight:800; font-size:13px; cursor:pointer; }
+  button:disabled { opacity:.35; cursor:default; }
+  #play { flex:1; background:#f472b6; color:#0b0e14; }
+  .status { text-align:center; color:#8a93a6; font-size:12px; margin-top:10px; }
+  .said { text-align:center; font-size:14px; margin-top:5px; }
+  #moves { max-height:280px; overflow:auto; }
+  #moves .row { display:flex; align-items:center; padding:8px 4px; border-bottom:1px solid #20283a; cursor:pointer; }
+  #moves .row.on { background:#0f1420; }
+  #moves .d { flex:1; font-size:13px; line-height:18px; }
+  #moves .n { width:48px; text-align:right; font-size:14px; font-weight:700; }
+  .head { display:flex; align-items:flex-end; padding-bottom:6px; border-bottom:1px solid #2a3142; }
+  .head .n { width:48px; text-align:right; font-size:12px; font-weight:800; }
+  .A { color:#f472b6; } .B { color:#60a5fa; } .g { color:#34d399; }
+  .note { color:#8a93a6; font-size:13px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Bid Scrabble</h1>
+  <p class="sub" id="sub">Loading the game…</p>
+  <div id="app" hidden>
+    <div class="panel">
+      <div class="names"><span class="A" id="nA"></span><span class="B" id="nB"></span></div>
+      <div class="bar"><div id="barA"></div></div>
+      <div class="under"><b class="A" id="scA"></b><span id="mid"></span><b class="B" id="scB"></b></div>
+      <div id="graph"></div>
+    </div>
+    <div id="board"></div>
+    <div class="panel">
+      <div class="controls">
+        <button id="first">&#9198;</button>
+        <button id="prev">&#9664;</button>
+        <button id="play">&#9654;&nbsp; Play</button>
+        <button id="next">&#9654;</button>
+        <button id="last">&#9197;</button>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="said" id="said"></div>
+    </div>
+    <div class="panel racks">
+      <div class="lbl">racks at this point</div>
+      <div class="r"><div class="rh"><span class="A" id="raName"></span><span class="sub" id="raN"></span></div><div class="tiles" id="raT"></div></div>
+      <div class="r"><div class="rh"><span class="B" id="rbName"></span><span class="sub" id="rbN"></span></div><div class="tiles" id="rbT"></div></div>
+    </div>
+    <div class="panel">
+      <div class="head"><div style="flex:1" class="lbl">every move</div><div class="n A" id="hA"></div><div class="n B" id="hB"></div></div>
+      <div id="moves"></div>
+    </div>
+  </div>
+  <div id="err" class="panel note" hidden></div>
+</div>
+
+<script>
+/* Bid Scrabble replay viewer.
+
+   The room is already on the server under bidscrabble/rooms/<code> and the
+   database is world-readable, so this page needs no key and no backend.
+
+   The reconstruction MUST match replayFrames() in the app's engine.ts — both
+   apply the log's placements to an empty board. The app's version is asserted
+   against 300 simulated games; tests/web-replay.test.ts in the app runs THIS
+   FILE's functions in a sandbox and compares them frame by frame, so the two
+   can't drift silently.
+
+   Lives at /replay/bidscrabble/, deliberately outside the /bidscrabble/* prefix
+   the app claims as a Universal Link / App Link. */
+
+var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
+var N = 15;
+var VAL = { A:1,B:3,C:3,D:2,E:1,F:4,G:2,H:4,I:1,J:8,K:5,L:1,M:3,N:1,O:1,P:3,Q:10,R:1,S:1,T:1,U:1,V:4,W:4,X:8,Y:4,Z:10,"?":0 };
+var PREM_COLOR = { TW:"#b91c1c", DW:"#db2777", TL:"#1d4ed8", DL:"#3b82f6" };
+var PREM = (function () {
+  var TW=[[0,0],[0,7],[0,14],[7,0],[7,14],[14,0],[14,7],[14,14]];
+  var DW=[[1,1],[2,2],[3,3],[4,4],[7,7],[10,10],[11,11],[12,12],[13,13],[1,13],[2,12],[3,11],[4,10],[13,1],[12,2],[11,3],[10,4]];
+  var TL=[[1,5],[1,9],[5,1],[5,5],[5,9],[5,13],[9,1],[9,5],[9,9],[9,13],[13,5],[13,9]];
+  var DL=[[0,3],[0,11],[2,6],[2,8],[3,0],[3,7],[3,14],[6,2],[6,6],[6,8],[6,12],[7,3],[7,11],[8,2],[8,6],[8,8],[8,12],[11,0],[11,7],[11,14],[12,6],[12,8],[14,3],[14,11]];
+  var m = {};
+  function set(a,v){ for(var i=0;i<a.length;i++) m[a[i][0]*N+a[i][1]] = v; }
+  set(TW,"TW"); set(DW,"DW"); set(TL,"TL"); set(DL,"DL");
+  return m;
+})();
+
+var code = (new URLSearchParams(location.search).get("code") || "").replace(/[^0-9]/g, "").slice(0, 4);
+var room = null, frames = [], evals = [], idx = 0, timer = null;
+
+function fail(msg) {
+  document.getElementById("sub").textContent = "";
+  var e = document.getElementById("err");
+  e.hidden = false; e.innerHTML = msg;
+}
+
+if (!code) {
+  fail("This link doesn't have a game code in it. Ask for the replay link again.");
+} else {
+  fetch(DB + "/bidscrabble/rooms/" + code + ".json")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (data) {
+      if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
+      room = data;
+      if (!Array.isArray(room.log) || !room.log.length || (room.phase !== "play" && room.phase !== "over")) {
+        fail("This game hasn't reached the board yet, or it was played before replays were recorded.");
+        return;
+      }
+      build(); start();
+    })
+    .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
+}
+
+/* ---- rebuild every position from the log's placements ---- */
+function build() {
+  var board = {}, rackA = "", rackB = "", bag = 0;
+  frames = [];
+  for (var k = 0; k < room.log.length; k++) {
+    var e = room.log[k], cells = [];
+    if (e.cells && e.tiles && e.cells.length === e.tiles.length) {
+      var blanks = e.blanks || new Array(e.cells.length + 1).join("0");
+      for (var i = 0; i < e.cells.length; i++) board[e.cells[i]] = { l: e.tiles[i], blank: blanks[i] === "1" };
+      cells = e.cells.slice();
+    }
+    if (e.ra != null) rackA = e.ra;
+    if (e.rb != null) rackB = e.rb;
+    if (e.bag != null) bag = e.bag;
+    var copy = {};
+    for (var key in board) copy[key] = board[key];
+    frames.push({
+      board: copy, rackA: rackA, rackB: rackB, bag: bag,
+      scoreA: e.cumA || 0, scoreB: e.cumB || 0, cells: cells, entry: e, index: k,
+    });
+  }
+  evals = frames.map(function (f) { return evalScores(f.scoreA, f.scoreB); });
+}
+
+/* the same eval the app's review screen shows: the SCORE, not a model of it */
+function evalScores(scoreA, scoreB) {
+  var a = Math.max(0, scoreA), b = Math.max(0, scoreB), tot = a + b;
+  return { share: tot > 0 ? a / tot : 0.5, lead: scoreA - scoreB, a: scoreA, b: scoreB };
+}
+
+var nameA, nameB;
+function nameOf(s) { return s === "A" ? nameA : nameB; }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" })[c]; }); }
+
+function start() {
+  nameA = (room.seatA && room.seatA.name) || "Player 1";
+  nameB = (room.seatB && room.seatB.name) || "Player 2";
+  var res = room.winner === "tie" ? "a tie"
+    : room.winner ? nameOf(room.winner) + " won " + Math.max(room.scoreA, room.scoreB) + "-" + Math.min(room.scoreA, room.scoreB)
+    : "still in progress";
+  document.getElementById("sub").textContent = nameA + " vs " + nameB + " — " + res;
+  document.getElementById("nA").textContent = nameA;
+  document.getElementById("nB").textContent = nameB;
+  document.getElementById("hA").textContent = nameA;
+  document.getElementById("hB").textContent = nameB;
+  document.getElementById("raName").textContent = nameA;
+  document.getElementById("rbName").textContent = nameB;
+
+  var board = document.getElementById("board");
+  for (var i = 0; i < N * N; i++) {
+    var d = document.createElement("div");
+    d.className = "c";
+    board.appendChild(d);
+  }
+
+  var g = document.getElementById("graph");
+  for (var f = 0; f < frames.length; f++) {
+    var col = document.createElement("div");
+    col.className = "col";
+    var fill = document.createElement("i");
+    fill.style.height = Math.max(1, evals[f].share * 38) + "px";
+    col.appendChild(fill);
+    g.appendChild(col);
+  }
+
+  var moves = document.getElementById("moves");
+  for (var m = 0; m < room.log.length; m++) {
+    var e = room.log[m];
+    var row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML =
+      '<span class="d">' + (e.by ? '<b class="' + e.by + '">' + esc(nameOf(e.by)) + '</b> ' : "") +
+        esc(e.desc) + (e.delta ? ' <b class="g">+' + e.delta + "</b>" : "") + "</span>" +
+      '<span class="n A">' + (e.cumA || 0) + "</span>" +
+      '<span class="n B">' + (e.cumB || 0) + "</span>";
+    row.onclick = (function (n) { return function () { stop(); go(n); }; })(m);
+    moves.appendChild(row);
+  }
+
+  document.getElementById("first").onclick = function () { stop(); go(0); };
+  document.getElementById("prev").onclick = function () { stop(); go(idx - 1); };
+  document.getElementById("next").onclick = function () { stop(); go(idx + 1); };
+  document.getElementById("last").onclick = function () { stop(); go(frames.length - 1); };
+  document.getElementById("play").onclick = function () {
+    if (timer) { stop(); return; }
+    if (idx >= frames.length - 1) go(0);
+    timer = setInterval(function () {
+      if (idx >= frames.length - 1) { stop(); return; }
+      go(idx + 1);
+    }, 900);
+    render();
+  };
+
+  document.getElementById("app").hidden = false;
+  go(0);
+}
+
+function stop() { if (timer) { clearInterval(timer); timer = null; render(); } }
+function go(n) { idx = Math.max(0, Math.min(frames.length - 1, n)); render(); }
+
+function rackHTML(rack) {
+  if (!rack.length) return '<span class="note">empty</span>';
+  var out = "";
+  for (var i = 0; i < rack.length; i++) {
+    var t = rack[i];
+    out += '<span class="tl">' + (t === "?" ? "" : esc(t)) + (t === "?" ? "" : "<i>" + VAL[t] + "</i>") + "</span>";
+  }
+  return out;
+}
+
+function render() {
+  var f = frames[idx], ev = evals[idx];
+  var hit = {};
+  for (var i = 0; i < f.cells.length; i++) hit[f.cells[i]] = true;
+
+  var cells = document.getElementById("board").children;
+  for (var j = 0; j < N * N; j++) {
+    var el = cells[j];
+    var t = f.board[j];
+    var prem = PREM[j], center = j === 7 * N + 7;
+    el.className = "c" + (t ? " t" : "") + (hit[j] ? " on" : "");
+    if (t) {
+      el.style.background = "";
+      el.innerHTML = esc(t.l) + (t.blank ? "" : "<i>" + VAL[t.l] + "</i>");
+    } else {
+      el.style.background = prem ? PREM_COLOR[prem] : center ? "#db2777" : "#1b2230";
+      el.innerHTML = center ? "&#9733;" : (prem || "");
+    }
+  }
+
+  document.getElementById("barA").style.width = (ev.share * 100) + "%";
+  document.getElementById("scA").textContent = ev.a;
+  document.getElementById("scB").textContent = ev.b;
+  document.getElementById("mid").textContent =
+    (ev.lead === 0 ? "level" : nameOf(ev.lead > 0 ? "A" : "B") + " +" + Math.abs(ev.lead)) +
+    "  ·  " + f.bag + " tiles left";
+
+  var cols = document.getElementById("graph").children;
+  for (var c = 0; c < cols.length; c++) cols[c].className = "col" + (c === idx ? " on" : "");
+
+  document.getElementById("raT").innerHTML = rackHTML(f.rackA);
+  document.getElementById("rbT").innerHTML = rackHTML(f.rackB);
+  document.getElementById("raN").textContent = f.rackA.length + " tiles";
+  document.getElementById("rbN").textContent = f.rackB.length + " tiles";
+
+  document.getElementById("status").textContent = "Move " + (idx + 1) + " of " + frames.length;
+  var e = f.entry;
+  document.getElementById("said").innerHTML =
+    (e.by ? '<b class="' + e.by + '">' + esc(nameOf(e.by)) + "</b> " : "") + esc(e.desc) +
+    (e.delta ? ' <b class="g">+' + e.delta + "</b>" : "");
+
+  document.getElementById("play").innerHTML = timer ? "&#10074;&#10074;&nbsp; Pause"
+    : idx >= frames.length - 1 ? "&#9654;&nbsp; Replay" : "&#9654;&nbsp; Play";
+  document.getElementById("first").disabled = idx === 0;
+  document.getElementById("prev").disabled = idx === 0;
+  document.getElementById("next").disabled = idx >= frames.length - 1;
+  document.getElementById("last").disabled = idx >= frames.length - 1;
+
+  var rows = document.getElementById("moves").children;
+  for (var r = 0; r < rows.length; r++) {
+    rows[r].className = "row" + (r === idx ? " on" : "");
+    if (r === idx) rows[r].scrollIntoView({ block: "nearest" });
+  }
+}
+</script>
+</body>
+</html>
