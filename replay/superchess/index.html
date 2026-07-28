@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Super Chess replay</title>
+<meta name="description" content="Watch a game of Super Chess play out move by move.">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:#14161b; color:#ece8de; padding:18px 14px 40px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { width:100%; max-width:520px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 2px; font-family:Georgia,"Times New Roman",serif; }
+  .sub { color:#9a958a; font-size:13px; margin:0 0 16px; }
+  .panel { background:#1c2027; border:1px solid #343a47; border-radius:12px; padding:13px; margin-bottom:11px; }
+  .lbl { font-size:10.5px; text-transform:uppercase; letter-spacing:1.4px; color:#9a958a; }
+  .names { display:flex; justify-content:space-between; font-weight:800; font-size:13px; margin-bottom:6px; }
+  .bar { height:16px; border-radius:8px; overflow:hidden; display:flex; background:#7e9bbd; }
+  .bar > div { height:100%; background:#ece8de; }
+  .under { display:flex; justify-content:space-between; margin-top:5px; font-size:11px; color:#9a958a; }
+  #graph { height:38px; display:flex; border-radius:6px; overflow:hidden; margin-top:12px; position:relative; background:#7e9bbd; }
+  #graph .col { flex:1 1 0; display:flex; align-items:flex-end; opacity:.72; position:relative; }
+  #graph .col.on { opacity:1; outline:1.5px solid #cda45c; outline-offset:-1.5px; }
+  #graph .col i { display:block; width:100%; background:#ece8de; }
+  .frame { padding:9px; background:#2e2317; border-radius:10px; margin:0 auto 11px; width:fit-content; }
+  #board { display:grid; grid-template-columns:repeat(8,1fr); width:min(84vw,400px);
+    border:1.5px solid #9c7d44; border-radius:4px; overflow:hidden; }
+  .sq { aspect-ratio:1; display:flex; align-items:center; justify-content:center; position:relative;
+    font-size:min(9vw,40px); line-height:1; }
+  .sq.l { background:#ecd9b0; } .sq.d { background:#8a6a47; } .sq.ck { background:#9c3b39; }
+  .sq span.w { color:#fbf7ee; text-shadow:0 0 2px #000,0 1px 2px rgba(0,0,0,.7); }
+  .sq span.b { color:#1c1a17; text-shadow:0 0 2px rgba(255,255,255,.35); }
+  .sq u { position:absolute; left:2px; top:1px; font-size:8px; font-weight:700; text-decoration:none; }
+  .sq o { position:absolute; right:2px; bottom:0; font-size:8px; font-weight:700; }
+  .controls { display:flex; gap:8px; align-items:center; }
+  button { font:inherit; border:0; border-radius:9px; padding:11px 12px; background:#222732; color:#ece8de;
+    font-weight:800; font-size:13px; cursor:pointer; }
+  button:disabled { opacity:.35; cursor:default; }
+  #play { flex:1; background:#cda45c; color:#1a140a; }
+  .status { text-align:center; color:#9a958a; font-size:12px; margin-top:10px; }
+  .said { text-align:center; font-size:15px; font-weight:700; margin-top:4px; }
+  .hand { margin-top:10px; }
+  .hand .hh { display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; font-size:12.5px; font-weight:800; }
+  .cards { display:flex; gap:6px; flex-wrap:wrap; }
+  .card { border:1px solid #9c7d44; background:#241d13; border-radius:6px; padding:5px 8px; font-size:11.5px; font-weight:700; color:#e8dcc0; }
+  #moves { max-height:280px; overflow:auto; margin-top:8px; }
+  #moves .row { display:flex; align-items:center; margin-bottom:4px; }
+  #moves .num { width:30px; color:#9a958a; font-size:13px; }
+  #moves .m { flex:1; font-weight:700; font-size:14px; padding:3px 5px; border-radius:5px; cursor:pointer; }
+  #moves .m.on { background:#222732; }
+  .W { color:#ece8de; } .B { color:#7e9bbd; }
+  .note { color:#9a958a; font-size:13px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Super Chess</h1>
+  <p class="sub" id="sub">Loading the game…</p>
+  <div id="app" hidden>
+    <div class="panel">
+      <div class="names"><span class="W" id="nW"></span><span class="B" id="nB"></span></div>
+      <div class="bar"><div id="barW"></div></div>
+      <div class="under"><span id="mW"></span><span id="mMid"></span><span id="mB"></span></div>
+      <div id="graph"></div>
+    </div>
+    <div class="frame"><div id="board"></div></div>
+    <div class="panel">
+      <div class="controls">
+        <button id="first">&#9198;</button>
+        <button id="prev">&#9664;</button>
+        <button id="play">&#9654;&nbsp; Play</button>
+        <button id="next">&#9654;</button>
+        <button id="last">&#9197;</button>
+      </div>
+      <div class="status" id="status"></div>
+      <div class="said" id="said"></div>
+    </div>
+    <div class="panel">
+      <div class="lbl">hands at this point</div>
+      <div class="hand"><div class="hh"><span class="W" id="hwName"></span><span class="note" id="hwN"></span></div><div class="cards" id="hwC"></div></div>
+      <div class="hand"><div class="hh"><span class="B" id="hbName"></span><span class="note" id="hbN"></span></div><div class="cards" id="hbC"></div></div>
+    </div>
+    <div class="panel">
+      <div class="lbl">every move</div>
+      <div id="moves"></div>
+    </div>
+  </div>
+  <div id="err" class="panel note" hidden></div>
+</div>
+
+<script>
+/* Super Chess replay viewer.
+
+   The room is already on the server under superchess/rooms/<code> and the
+   database is world-readable, so this page needs no key and no backend.
+
+   Super Chess SNAPSHOTS the board on every move rather than storing a delta,
+   because cards move pieces too (teleports, retreats, landmines, flank
+   knights) — so there is nothing to reconstruct here and nothing that can drift
+   from the game that was played. This page just unpacks what the engine wrote.
+   A parity test in the app (tests/web-replay.test.ts) runs THIS FILE's
+   functions against the engine to keep the unpacking honest.
+
+   Lives at /replay/superchess/, deliberately outside the /superchess/* prefix
+   the app claims as a Universal Link / App Link. */
+
+var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
+var PVAL = { K:0, Q:9, R:5, B:3, N:3, P:1 };
+var FIG = { K:"♚", Q:"♛", R:"♜", B:"♝", N:"♞", P:"♟" };
+var CARD_NAMES = {
+  BLITZ:"Blitz", SPY:"Spy", STEAL:"Steal", SEER:"Seer", RETRIEVE:"Retrieve",
+  UNDERPROMOTION:"Underpromotion", SIEGE:"Siege", RETREAT:"Retreat",
+  INDECISION:"Indecision", ZUGZWANG:"Zugzwang", LANDMINE:"Landmine",
+  MIRROR:"Mirror", TELEPORT:"Teleport", REINFORCEMENTS:"Reinforcements",
+  FLANK:"Flank", SHAPESHIFT:"Shapeshift", FORCE_FIELD:"Force Field", BATTERY:"Battery",
+};
+
+var code = (new URLSearchParams(location.search).get("code") || "").replace(/[^0-9]/g, "").slice(0, 4);
+var room = null, frames = [], evals = [], idx = 0, timer = null;
+
+function fail(msg) {
+  document.getElementById("sub").textContent = "";
+  var e = document.getElementById("err");
+  e.hidden = false; e.innerHTML = msg;
+}
+
+if (!code) {
+  fail("This link doesn't have a game code in it. Ask for the replay link again.");
+} else {
+  fetch(DB + "/superchess/rooms/" + code + ".json")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (data) {
+      if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
+      room = data;
+      var h = room.history || [];
+      if (!h.length || typeof h[h.length - 1].b !== "string") {
+        fail("This game was played before positions were recorded, so there's nothing to step through.");
+        return;
+      }
+      build(); start();
+    })
+    .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
+}
+
+function startBoard() {
+  var b = new Array(64).fill(null);
+  var back = ["R","N","B","Q","K","B","N","R"];
+  for (var f = 0; f < 8; f++) { b[f] = "b" + back[f]; b[8+f] = "bP"; b[48+f] = "wP"; b[56+f] = "w" + back[f]; }
+  return b;
+}
+function unpackBoard(s) {
+  var out = new Array(64).fill(null);
+  if (!s || s.length !== 64) return out;
+  for (var i = 0; i < 64; i++) {
+    var ch = s[i];
+    if (ch === ".") continue;
+    out[i] = (ch === ch.toUpperCase() ? "w" : "b") + ch.toUpperCase();
+  }
+  return out;
+}
+function packBoard(b) {
+  var out = "";
+  for (var i = 0; i < 64; i++) {
+    var p = b[i];
+    out += !p ? "." : (p[0] === "w" ? p[1].toUpperCase() : p[1].toLowerCase());
+  }
+  return out;
+}
+function kingPos(b, c) { var t = c + "K"; for (var i = 0; i < 64; i++) if (b[i] === t) return i; return -1; }
+
+function build() {
+  frames = [{ board: startBoard(), handA: [], handB: [], check: null, entry: null, index: 0 }];
+  var h = room.history || [];
+  for (var i = 0; i < h.length; i++) {
+    var e = h[i], prev = frames[frames.length - 1];
+    frames.push({
+      board: e.b ? unpackBoard(e.b) : prev.board,
+      handA: e.ha ? e.ha.split("|").filter(Boolean) : [],
+      handB: e.hb ? e.hb.split("|").filter(Boolean) : [],
+      check: e.ck === "w" || e.ck === "b" ? e.ck : null,
+      entry: e, index: i + 1,
+    });
+  }
+  evals = frames.map(function (f) { return evalMaterial(f.board); });
+}
+
+/* the same eval the app's review screen shows: plain MATERIAL, nothing more */
+function evalMaterial(board) {
+  var w = 0, b = 0;
+  for (var i = 0; i < 64; i++) {
+    var p = board[i];
+    if (!p) continue;
+    var v = PVAL[p[1]] || 0;
+    if (p[0] === "w") w += v; else b += v;
+  }
+  var tot = w + b;
+  return { share: tot > 0 ? w / tot : 0.5, diff: w - b, w: w, b: b };
+}
+
+var whiteName, blackName, whiteSeat;
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" })[c]; }); }
+function cardName(c) { return CARD_NAMES[c] || c; }
+
+function start() {
+  whiteSeat = room.whiteSeat === "B" ? "B" : "A";
+  var blackSeat = whiteSeat === "A" ? "B" : "A";
+  whiteName = (room["seat" + whiteSeat] && room["seat" + whiteSeat].name) || "White";
+  blackName = (room["seat" + blackSeat] && room["seat" + blackSeat].name) || "Black";
+
+  var res = room.result === "draw" ? "a draw by " + (room.resultType || "agreement")
+    : room.result ? (room.result === "w" ? whiteName : blackName) + " won by " + (room.resultType || "checkmate")
+    : "still in progress";
+  document.getElementById("sub").textContent = whiteName + " vs " + blackName + " — " + res;
+  document.getElementById("nW").textContent = whiteName;
+  document.getElementById("nB").textContent = blackName;
+  document.getElementById("hwName").textContent = whiteName;
+  document.getElementById("hbName").textContent = blackName;
+
+  var board = document.getElementById("board");
+  for (var i = 0; i < 64; i++) board.appendChild(document.createElement("div"));
+
+  var g = document.getElementById("graph");
+  for (var f = 0; f < frames.length; f++) {
+    var col = document.createElement("div");
+    col.className = "col";
+    var fill = document.createElement("i");
+    fill.style.height = Math.max(1, evals[f].share * 38) + "px";
+    col.appendChild(fill);
+    g.appendChild(col);
+  }
+
+  var moves = document.getElementById("moves"), h = room.history || [];
+  for (var row = 0; row < Math.ceil(h.length / 2); row++) {
+    var wi = row * 2, bi = row * 2 + 1;
+    var d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = '<span class="num">' + (row + 1) + '.</span>' +
+      '<span class="m W" data-i="' + (wi + 1) + '">' + esc(h[wi] ? h[wi].san : "") + "</span>" +
+      '<span class="m B" data-i="' + (bi + 1) + '">' + esc(h[bi] ? h[bi].san : "") + "</span>";
+    moves.appendChild(d);
+  }
+  moves.onclick = function (ev) {
+    var t = ev.target.closest ? ev.target.closest(".m") : null;
+    if (t && t.textContent) { stop(); go(+t.dataset.i); }
+  };
+
+  document.getElementById("first").onclick = function () { stop(); go(0); };
+  document.getElementById("prev").onclick = function () { stop(); go(idx - 1); };
+  document.getElementById("next").onclick = function () { stop(); go(idx + 1); };
+  document.getElementById("last").onclick = function () { stop(); go(frames.length - 1); };
+  document.getElementById("play").onclick = function () {
+    if (timer) { stop(); return; }
+    if (idx >= frames.length - 1) go(0);
+    timer = setInterval(function () {
+      if (idx >= frames.length - 1) { stop(); return; }
+      go(idx + 1);
+    }, 800);
+    render();
+  };
+
+  document.getElementById("app").hidden = false;
+  go(0);
+}
+
+function stop() { if (timer) { clearInterval(timer); timer = null; render(); } }
+function go(n) { idx = Math.max(0, Math.min(frames.length - 1, n)); render(); }
+
+function handHTML(cards) {
+  if (!cards.length) return '<span class="note">Empty.</span>';
+  return cards.map(function (c) { return '<span class="card">' + esc(cardName(c)) + "</span>"; }).join("");
+}
+
+function render() {
+  var f = frames[idx], ev = evals[idx];
+  var ck = f.check ? kingPos(f.board, f.check) : -1;
+
+  var cells = document.getElementById("board").children;
+  for (var i = 0; i < 64; i++) {
+    var r = Math.floor(i / 8), c = i % 8;
+    var light = (r + c) % 2 === 0;
+    var el = cells[i];
+    el.className = "sq " + (i === ck ? "ck" : light ? "l" : "d");
+    var p = f.board[i];
+    var edge = "";
+    if (c === 0) edge += "<u style='color:" + (light ? "#a07e54" : "#e6d6ad") + "'>" + (8 - r) + "</u>";
+    if (r === 7) edge += "<o style='color:" + (light ? "#a07e54" : "#e6d6ad") + "'>" + "abcdefgh"[c] + "</o>";
+    el.innerHTML = (p ? '<span class="' + p[0] + '">' + FIG[p[1]] + "</span>" : "") + edge;
+  }
+
+  document.getElementById("barW").style.width = (ev.share * 100) + "%";
+  document.getElementById("mW").textContent = ev.w;
+  document.getElementById("mB").textContent = ev.b;
+  document.getElementById("mMid").textContent =
+    "material" + (ev.diff === 0 ? ", level" : ", " + (ev.diff > 0 ? whiteName : blackName) + " +" + Math.abs(ev.diff));
+
+  var cols = document.getElementById("graph").children;
+  for (var g = 0; g < cols.length; g++) cols[g].className = "col" + (g === idx ? " on" : "");
+
+  var wHand = whiteSeat === "A" ? f.handA : f.handB;
+  var bHand = whiteSeat === "A" ? f.handB : f.handA;
+  document.getElementById("hwC").innerHTML = handHTML(wHand);
+  document.getElementById("hbC").innerHTML = handHTML(bHand);
+  document.getElementById("hwN").textContent = wHand.length + " in hand";
+  document.getElementById("hbN").textContent = bHand.length + " in hand";
+
+  document.getElementById("status").textContent =
+    idx === 0 ? "The starting position" : "Move " + idx + " of " + (frames.length - 1);
+  document.getElementById("said").innerHTML = f.entry
+    ? '<span class="' + (f.entry.by === "w" ? "W" : "B") + '">' +
+      esc(f.entry.by === "w" ? whiteName : blackName) + ": </span>" + esc(f.entry.san)
+    : "";
+
+  document.getElementById("play").innerHTML = timer ? "&#10074;&#10074;&nbsp; Pause"
+    : idx >= frames.length - 1 ? "&#9654;&nbsp; Replay" : "&#9654;&nbsp; Play";
+  document.getElementById("first").disabled = idx === 0;
+  document.getElementById("prev").disabled = idx === 0;
+  document.getElementById("next").disabled = idx >= frames.length - 1;
+  document.getElementById("last").disabled = idx >= frames.length - 1;
+
+  var ms = document.getElementById("moves").querySelectorAll(".m");
+  for (var m = 0; m < ms.length; m++) {
+    var on = +ms[m].dataset.i === idx;
+    ms[m].className = "m " + (m % 2 === 0 ? "W" : "B") + (on ? " on" : "");
+    if (on) ms[m].scrollIntoView({ block: "nearest" });
+  }
+}
+</script>
+</body>
+</html>
