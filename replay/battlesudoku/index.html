@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battle Sudoku replay</title>
+<meta name="description" content="Watch a game of Battle Sudoku play out move by move.">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:#0E1726; color:#EDE7D8; padding:18px 14px 40px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { width:100%; max-width:520px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 2px; letter-spacing:.5px; }
+  .sub { color:#8A97AD; font-size:13px; margin:0 0 16px; }
+  .panel { background:#16223A; border:1px solid #2A3A57; border-radius:12px; padding:13px; margin-bottom:11px; }
+  .names { display:flex; justify-content:space-between; font-weight:800; font-size:13px; margin-bottom:6px; }
+  .nA { color:#3FA7A0; } .nB { color:#E0533D; }
+  .bar { height:14px; border-radius:7px; overflow:hidden; display:flex; border:1px solid #2A3A57; }
+  .bar > div { height:100%; }
+  .under { display:flex; justify-content:space-between; color:#8A97AD; font-size:11px; margin-top:5px; }
+  #graph { height:38px; display:flex; border-radius:6px; overflow:hidden; margin-top:12px; gap:1px; }
+  #graph .col { flex:1 1 0; display:flex; flex-direction:column; justify-content:flex-end; opacity:.72; cursor:pointer; }
+  #graph .col.on { opacity:1; outline:1.5px solid #EDE7D8; outline-offset:-1.5px; }
+  #graph .col i { display:block; width:100%; }
+
+  .tabs { display:flex; gap:6px; margin-bottom:9px; }
+  .tabs button { flex:1; background:transparent; border:1px solid #2A3A57; color:#8A97AD; padding:8px 6px; }
+  .tabs button.on { background:#1E2E4D; color:#EDE7D8; }
+  .tabs button.on.a { border-color:#3FA7A0; } .tabs button.on.b { border-color:#E0533D; }
+  .tabs .sm { display:block; font-size:10px; font-weight:600; color:#8A97AD; margin-top:2px; }
+
+  #board { display:grid; grid-template-columns:repeat(9,1fr); background:#BCB39A;
+    border:2px solid #16202E; border-radius:6px; overflow:hidden; margin:0 auto 9px; aspect-ratio:1; }
+  .c { position:relative; display:flex; align-items:center; justify-content:center;
+    background:#F2EEE3; color:#16202E; font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:min(4.4vw,19px); font-weight:600; }
+  .c.miss { background:#6FB2DE; color:#10344A; }
+  .c.hit { background:#EFA898; font-weight:800; }
+  .c.ship { background:#F7DCD5; }
+  .c.secret { color:rgba(22,32,46,.34); font-weight:400; }
+  .c.now { outline:2.5px solid #A78BE0; outline-offset:-2.5px; z-index:3; }
+  .c.br { border-right:2px solid #16202E; }
+  .c.bb { border-bottom:2px solid #16202E; }
+  .c.hr { border-right:1px solid #BCB39A; }
+  .c.hb { border-bottom:1px solid #BCB39A; }
+  .c .sh { position:absolute; inset:2px; border:1.5px solid rgba(158,47,32,.55); border-radius:3px; }
+
+  .controls { display:flex; gap:6px; align-items:center; }
+  button { font:inherit; border:0; border-radius:9px; padding:11px 10px; background:#1E2E4D; color:#EDE7D8;
+    font-weight:800; font-size:13px; cursor:pointer; }
+  button:disabled { opacity:.35; cursor:default; }
+  #play { flex:2; background:#3FA7A0; color:#0E1726; }
+  input[type=range] { width:100%; margin:14px 0 6px; accent-color:#A78BE0; }
+  .status { text-align:center; color:#8A97AD; font-size:11px; }
+  .said { text-align:center; font-size:13.5px; margin-top:5px; line-height:1.45; }
+  .lbl { font-size:10px; text-transform:uppercase; letter-spacing:1.4px; color:#8A97AD; margin-bottom:6px; }
+  .speeds { display:flex; gap:5px; margin-top:10px; }
+  .speeds button { padding:5px 10px; font-size:12px; background:transparent; border:1px solid #2A3A57; }
+  .speeds button.on { border-color:#A78BE0; color:#EDE7D8; }
+  #moves { max-height:280px; overflow:auto; }
+  #moves .row { display:flex; align-items:flex-start; gap:8px; padding:6px 8px; border-radius:8px; cursor:pointer; }
+  #moves .row.on { background:#1E2E4D; }
+  #moves .i { width:26px; color:#8A97AD; font-size:11px; flex:none;
+    font-family:ui-monospace,Menlo,Consolas,monospace; }
+  #moves .tick { width:3px; align-self:stretch; border-radius:2px; flex:none; }
+  #moves .tx { font-size:13px; line-height:1.45; color:#8A97AD; }
+  #moves .row.on .tx { color:#EDE7D8; }
+  .note { color:#8A97AD; font-size:13px; line-height:1.5; }
+  .fine { color:#8A97AD; font-size:11px; line-height:1.5; margin:6px 0 0; }
+  a { color:#3FA7A0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Battle Sudoku</h1>
+  <p class="sub" id="sub">Loading the game…</p>
+  <div id="app" hidden>
+    <div class="panel">
+      <div class="names"><span class="nA" id="nA"></span><span class="nB" id="nB"></span></div>
+      <div class="bar"><div id="barA"></div><div id="barB"></div></div>
+      <div class="under"><span id="hA"></span><span id="mid"></span><span id="hB"></span></div>
+      <div id="graph"></div>
+    </div>
+
+    <div class="tabs">
+      <button id="tabA" class="on a"></button>
+      <button id="tabB" class="b"></button>
+    </div>
+    <div id="board"></div>
+    <p class="fine" id="legend"></p>
+
+    <div class="panel">
+      <div class="controls">
+        <button id="first">&#9198;</button>
+        <button id="prev">&#9664;</button>
+        <button id="play">&#9654;&nbsp; Play</button>
+        <button id="next">&#9654;</button>
+        <button id="last">&#9197;</button>
+      </div>
+      <input type="range" id="scrub" min="0" max="0" value="0">
+      <div class="status" id="status"></div>
+      <div class="said" id="said"></div>
+      <div class="speeds" id="speeds"></div>
+    </div>
+
+    <div class="panel">
+      <div class="lbl">every move</div>
+      <div id="moves"></div>
+    </div>
+  </div>
+  <div id="err" class="panel note" hidden></div>
+</div>
+
+<script>
+/* Battle Sudoku replay viewer.
+
+   The room already sits on the server under battlesudoku/rooms/<code> and the
+   database is world-readable, so this page needs no key and no backend: fetch
+   the room, replay its move log from two empty boards, and step through.
+
+   ★ THE RECONSTRUCTION HERE MUST MATCH boardsAt() IN THE APP'S engine.ts.
+   Both apply the same delta log from the same empty start. The app's version is
+   covered by a test that replays 400 simulated games and asserts the final
+   frame equals the board the game actually reached; this file is a SECOND
+   implementation with no tests of its own, so the two are kept deliberately
+   close — same branches, same order — and `moveText` mirrors components.tsx.
+   If the log format changes, change both.
+
+   ★ THIS PAGE LIVES AT /replay/battlesudoku/, deliberately OUTSIDE the
+   /battlesudoku/* prefix the app claims as a Universal Link / App Link. A
+   replay hosted under that prefix would be swallowed by the installed app,
+   whose parseJoinCode would pull the digits out and try to JOIN a finished
+   game.
+
+   Everything is shown here: both attack boards, both hidden grids, both
+   fleets. That is safe because the game is over — the in-app history tab
+   during play is the one that has to hide things. */
+
+var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
+
+/* Eval weights, copied EXACTLY from DEFAULT_BOT in the app's bot.ts so the bar
+   agrees with the bot's own reading of a position. evalLead scores hits, hits
+   that extend a wounded ship, digits known, and shots in hand.
+   The bar shows a RATIO, so a common scale factor would cancel — but the
+   weights RELATIVE to each other must match, and tests/web-replay.test.ts
+   asserts these four numbers against bot.ts rather than trusting this comment. */
+var W_HIT = 1, W_CLUSTER = 0.6, W_KNOWN = 0.05, W_BANKED = 0.4;
+
+var SPEEDS = [{ t: "1×", ms: 700 }, { t: "2×", ms: 350 }, { t: "4×", ms: 150 }];
+
+var code = (new URLSearchParams(location.search).get("code") || "").replace(/[^0-9]/g, "").slice(0, 4);
+var room = null, log = [], frames = [], evals = [], idx = 0, timer = null, speed = 0, view = "A";
+
+function fail(msg) {
+  document.getElementById("sub").textContent = "";
+  var e = document.getElementById("err");
+  e.hidden = false;
+  e.innerHTML = msg;
+}
+function opp(s) { return s === "A" ? "B" : "A"; }
+function nameOf(s) {
+  var p = room && room.players && room.players[s];
+  return (p && p.name) || ("Seat " + s);
+}
+function cellName(i) { return "R" + (Math.floor(i / 9) + 1) + "C" + ((i % 9) + 1); }
+
+/* RTDB strips nulls and can hand arrays back as keyed objects, so every list
+   read goes through this — the same reason the app has normalizeRoom(). */
+function arr(v) {
+  if (Array.isArray(v)) return v.filter(function (x) { return x != null; });
+  if (v && typeof v === "object") return Object.keys(v).map(function (k) { return v[k]; })
+    .filter(function (x) { return x != null; });
+  return [];
+}
+function grid(v) {
+  var g = v || {}, out = [];
+  for (var r = 0; r < 9; r++) {
+    var row = g[r] || {}, o = [];
+    for (var c = 0; c < 9; c++) o.push(row[c] != null ? row[c] : 0);
+    out.push(o);
+  }
+  return out;
+}
+
+if (!code) {
+  fail("This link doesn't have a game code in it. Ask for the replay link again.");
+} else {
+  fetch(DB + "/battlesudoku/rooms/" + code + ".json")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (data) {
+      if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
+      room = data;
+      log = arr(room.log);
+      if (!log.length) {
+        fail("This game was played before replays were recorded, so there's nothing to step through.");
+        return;
+      }
+      build();
+    })
+    .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
+}
+
+/* ---- replay: rebuild every frame from two empty boards ----
+   Mirrors boardsAt() in engine.ts branch for branch. */
+function emptyBoard() {
+  var b = [];
+  for (var i = 0; i < 81; i++) b.push({ num: null, shot: null, guesses: [] });
+  return b;
+}
+function cloneBoards(b) {
+  return {
+    A: b.A.map(function (c) { return { num: c.num, shot: c.shot, guesses: c.guesses.slice() }; }),
+    B: b.B.map(function (c) { return { num: c.num, shot: c.shot, guesses: c.guesses.slice() }; }),
+  };
+}
+function applyEntry(boards, e) {
+  var board = boards[e.s], cell = board[e.i];
+  if (!cell) return;
+  if (e.t === "reveal") {
+    // a revealed cell keeps an earlier miss marker: you can shoot a cell and
+    // only later work out which digit was under it
+    cell.num = e.v != null ? e.v : cell.num;
+    cell.guesses = [];
+  } else if (e.t === "guess") {
+    if (e.r === "correct") { cell.num = e.v != null ? e.v : e.n; cell.guesses = []; }
+    else if (e.n != null && cell.guesses.indexOf(e.n) < 0) cell.guesses.push(e.n);
+  } else if (e.t === "shot") {
+    if (e.r === "hit") { cell.shot = "hit"; if (e.v != null) cell.num = e.v; cell.guesses = []; }
+    else cell.shot = "miss";
+  }
+}
+/* Shots earned minus spent — mirrors shotsAt(). Only a correct guess grants
+   one and only an aimed (non-bonus) shot spends one. */
+function shotsFor(upTo) {
+  var s = { A: 0, B: 0 };
+  for (var k = 0; k < upTo; k++) {
+    var e = log[k];
+    if (e.t === "guess" && e.r === "correct") s[e.s]++;
+    else if (e.t === "shot" && !e.b) s[e.s]--;
+  }
+  return s;
+}
+function evalLead(board, banked) {
+  var hits = 0, known = 0, cluster = 0;
+  for (var i = 0; i < 81; i++) {
+    var c = board[i];
+    if (c.num != null) known++;
+    if (c.shot !== "hit") continue;
+    hits++;
+    var r = Math.floor(i / 9), col = i % 9;
+    if ((col > 0 && board[i - 1].shot === "hit") || (col < 8 && board[i + 1].shot === "hit") ||
+        (r > 0 && board[i - 9].shot === "hit") || (r < 8 && board[i + 9].shot === "hit")) cluster++;
+  }
+  return W_HIT * hits + W_CLUSTER * cluster + W_KNOWN * known + W_BANKED * Math.max(0, banked);
+}
+
+function build() {
+  var boards = { A: emptyBoard(), B: emptyBoard() };
+  frames = [cloneBoards(boards)];
+  for (var k = 0; k < log.length; k++) {
+    applyEntry(boards, log[k]);
+    frames.push(cloneBoards(boards));
+  }
+  evals = frames.map(function (f, k) {
+    var s = shotsFor(k);
+    var a = evalLead(f.A, s.A), b = evalLead(f.B, s.B);
+    return (a + b <= 0) ? 0.5 : a / (a + b); // an untouched position is a true dead heat
+  });
+
+  document.getElementById("sub").textContent =
+    nameOf("A") + " vs " + nameOf("B") + " · game " + code +
+    (room.winner ? " · " + nameOf(room.winner) + " won" : "");
+  document.getElementById("nA").textContent = nameOf("A");
+  document.getElementById("nB").textContent = nameOf("B");
+  document.getElementById("app").hidden = false;
+
+  var sc = document.getElementById("scrub");
+  sc.max = String(log.length);
+  sc.value = String(log.length);
+  idx = log.length;
+
+  buildGraph();
+  buildSpeeds();
+  buildMoves();
+  wire();
+  render();
+}
+
+function buildGraph() {
+  var g = document.getElementById("graph");
+  g.innerHTML = "";
+  // one column per frame, split teal-over-red by the eval share
+  for (var k = 0; k < frames.length; k++) {
+    var col = document.createElement("div");
+    col.className = "col";
+    var top = document.createElement("i"), bot = document.createElement("i");
+    top.style.background = "#E0533D";
+    bot.style.background = "#3FA7A0";
+    top.style.height = Math.round((1 - evals[k]) * 100) + "%";
+    bot.style.height = Math.round(evals[k] * 100) + "%";
+    col.appendChild(top); col.appendChild(bot);
+    (function (n) { col.onclick = function () { stop(); idx = n; render(); }; })(k);
+    g.appendChild(col);
+  }
+}
+
+function buildSpeeds() {
+  var s = document.getElementById("speeds");
+  s.innerHTML = "";
+  SPEEDS.forEach(function (sp, i) {
+    var b = document.createElement("button");
+    b.textContent = sp.t;
+    if (i === speed) b.className = "on";
+    b.onclick = function () { speed = i; buildSpeeds(); if (timer) { stop(); play(); } };
+    s.appendChild(b);
+  });
+}
+
+/* One formatter, mirroring moveText() in the app's components.tsx. There is no
+   "you" here — a spectator is neither player — so both sides are named. */
+function moveText(e) {
+  var who = nameOf(e.s), at = cellName(e.i);
+  if (e.t === "reveal") return who + (e.o ? " scouted " : " revealed ") + at + (e.v != null ? " — " + e.v : "");
+  if (e.t === "guess") {
+    if (e.r === "correct") return who + " called " + e.n + " at " + at + " — correct, and earned a shot";
+    return who + " called " + e.n + " at " + at + " — wrong";
+  }
+  var kind = e.b ? " fired a bonus shot at " : " fired at ";
+  if (e.r === "hit") return who + kind + at + " — hit" + (e.v != null ? ", uncovering " + e.v : "");
+  return who + kind + at + " — miss";
+}
+function tint(e) {
+  if (e.t === "shot") return e.r === "hit" ? "#E0533D" : "#7E8AA0";
+  if (e.t === "guess") return e.r === "correct" ? "#5BB98B" : "#8A97AD";
+  return "#3FA7A0";
+}
+
+function buildMoves() {
+  var m = document.getElementById("moves");
+  m.innerHTML = "";
+  log.forEach(function (e, k) {
+    var row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = '<span class="i">' + (k + 1) + '</span>' +
+      '<span class="tick" style="background:' + tint(e) + '"></span>' +
+      '<span class="tx"></span>';
+    row.querySelector(".tx").textContent = moveText(e);
+    row.onclick = function () { stop(); idx = k + 1; render(); };
+    m.appendChild(row);
+  });
+}
+
+function wire() {
+  document.getElementById("first").onclick = function () { stop(); idx = 0; render(); };
+  document.getElementById("prev").onclick = function () { stop(); idx = Math.max(0, idx - 1); render(); };
+  document.getElementById("next").onclick = function () { stop(); idx = Math.min(log.length, idx + 1); render(); };
+  document.getElementById("last").onclick = function () { stop(); idx = log.length; render(); };
+  document.getElementById("play").onclick = function () {
+    if (timer) { stop(); return; }
+    if (idx >= log.length) idx = 0;
+    play();
+  };
+  document.getElementById("scrub").oninput = function (ev) { stop(); idx = Number(ev.target.value); render(); };
+  document.getElementById("tabA").onclick = function () { view = "A"; render(); };
+  document.getElementById("tabB").onclick = function () { view = "B"; render(); };
+}
+function play() {
+  timer = setInterval(function () {
+    if (idx >= log.length) { stop(); render(); return; }
+    idx++; render();
+  }, SPEEDS[speed].ms);
+  document.getElementById("play").innerHTML = "&#10073;&#10073;&nbsp; Pause";
+}
+function stop() {
+  if (timer) clearInterval(timer);
+  timer = null;
+  document.getElementById("play").innerHTML =
+    (idx >= log.length ? "&#8635;&nbsp; Replay" : "&#9654;&nbsp; Play");
+}
+
+function render() {
+  var f = frames[idx], share = evals[idx], cur = idx > 0 ? log[idx - 1] : null;
+
+  document.getElementById("barA").style.width = Math.round(share * 100) + "%";
+  document.getElementById("barA").style.background = "#3FA7A0";
+  document.getElementById("barB").style.width = Math.round((1 - share) * 100) + "%";
+  document.getElementById("barB").style.background = "#E0533D";
+
+  var hits = { A: 0, B: 0 };
+  ["A", "B"].forEach(function (s) {
+    for (var i = 0; i < 81; i++) if (f[s][i].shot === "hit") hits[s]++;
+  });
+  var sh = shotsFor(idx);
+  document.getElementById("hA").textContent = hits.A + "/9 sunk";
+  document.getElementById("hB").textContent = hits.B + "/9 sunk";
+  document.getElementById("mid").textContent = idx === 0 ? "before the first move" : "move " + idx + " of " + log.length;
+
+  document.getElementById("tabA").innerHTML =
+    nameOf("A") + "'s attacks<span class=\"sm\">" + hits.A + "/9 · " + Math.max(0, sh.A) + " shot" + (sh.A === 1 ? "" : "s") + "</span>";
+  document.getElementById("tabB").innerHTML =
+    nameOf("B") + "'s attacks<span class=\"sm\">" + hits.B + "/9 · " + Math.max(0, sh.B) + " shot" + (sh.B === 1 ? "" : "s") + "</span>";
+  document.getElementById("tabA").className = "a" + (view === "A" ? " on" : "");
+  document.getElementById("tabB").className = "b" + (view === "B" ? " on" : "");
+
+  drawBoard(f[view], cur);
+
+  document.getElementById("legend").textContent =
+    "Faint digits and outlined squares were never uncovered in play — they are " +
+    nameOf(opp(view)) + "'s hidden grid and fleet, shown now the game is over.";
+
+  document.getElementById("scrub").value = String(idx);
+  document.getElementById("status").textContent =
+    idx === 0 ? "Both fleets hidden, both boards empty." : "Move " + idx + " of " + log.length;
+  document.getElementById("said").textContent = cur ? moveText(cur) : "";
+
+  var cols = document.getElementById("graph").children;
+  for (var k = 0; k < cols.length; k++) cols[k].className = "col" + (k === idx ? " on" : "");
+  var rows = document.getElementById("moves").children;
+  for (var j = 0; j < rows.length; j++) rows[j].className = "row" + (j === idx - 1 ? " on" : "");
+  if (idx > 0 && rows[idx - 1] && timer) rows[idx - 1].scrollIntoView({ block: "nearest" });
+
+  if (!timer) stop(); // keeps the Play/Replay label honest at the end
+}
+
+function drawBoard(board, cur) {
+  var el = document.getElementById("board");
+  var secretGrid = grid(room.players && room.players[opp(view)] && room.players[opp(view)].grid);
+  var ships = arr(room.players && room.players[opp(view)] && room.players[opp(view)].ships);
+  var shipSet = {};
+  ships.forEach(function (s) {
+    arr(s.cells).forEach(function (rc) { shipSet[rc[0] * 9 + rc[1]] = 1; });
+  });
+
+  var html = "";
+  for (var i = 0; i < 81; i++) {
+    var c = board[i], r = Math.floor(i / 9), col = i % 9;
+    var known = c.num != null, hit = c.shot === "hit", miss = c.shot === "miss";
+    var onShip = !!shipSet[i];
+    var cls = "c";
+    if (miss) cls += " miss";
+    else if (hit) cls += " hit";
+    else if (onShip) cls += " ship";
+    if (!known) cls += " secret";
+    if (cur && cur.s === view && cur.i === i) cls += " now";
+    // 3x3 box rules drawn heavy, the rest light
+    if (col % 3 === 2 && col !== 8) cls += " br"; else if (col !== 8) cls += " hr";
+    if (r % 3 === 2 && r !== 8) cls += " bb"; else if (r !== 8) cls += " hb";
+    var digit = known ? c.num : secretGrid[r][col];
+    html += '<div class="' + cls + '">' +
+      (onShip && !hit ? '<span class="sh"></span>' : "") +
+      (digit ? digit : "") + "</div>";
+  }
+  el.innerHTML = html;
+}
+</script>
+</body>
+</html>
