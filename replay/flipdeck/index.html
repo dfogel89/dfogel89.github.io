@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlipDeck replay</title>
+<meta name="description" content="Watch a game of FlipDeck play out move by move.">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:#16181a; color:#f3ead8; padding:18px 14px 40px;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { width:100%; max-width:520px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 2px; font-family:Georgia,"Times New Roman",serif; }
+  .sub { color:#b3a890; font-size:13px; margin:0 0 16px; }
+  .panel { background:#221c15; border:1px solid #3a3226; border-radius:12px; padding:13px; margin-bottom:11px; }
+  .lbl { font-size:10.5px; text-transform:uppercase; letter-spacing:1.4px; color:#b3a890; }
+  .names { display:flex; justify-content:space-between; font-weight:800; font-size:13px; margin-bottom:6px; }
+  .bar { height:18px; border-radius:5px; overflow:hidden; position:relative; background:#f3ead8;
+    border:1px solid #4a4034; }
+  .bar #barK { position:absolute; left:0; top:0; bottom:0; background:#16181a; }
+  .bar #band { position:absolute; top:0; bottom:0; background:rgba(216,166,72,0.30);
+    border-left:1px solid rgba(216,166,72,0.55); border-right:1px solid rgba(216,166,72,0.55); }
+  .bar #mid { position:absolute; left:50%; top:0; bottom:0; width:1px; background:rgba(179,168,144,0.5); }
+  .under { display:flex; justify-content:space-between; margin-top:5px; font-size:11px; color:#b3a890; }
+  #graph { height:38px; display:flex; border-radius:6px; overflow:hidden; margin-top:12px; background:#f3ead8; }
+  #graph .col { flex:1 1 0; display:flex; align-items:flex-end; opacity:.75; }
+  #graph .col.on { opacity:1; outline:1.5px solid #d8a648; outline-offset:-1.5px; }
+  #graph .col i { display:block; width:100%; background:#16181a; }
+  .frame { padding:9px; background:#124a30; border-radius:10px; margin:0 auto 11px; width:fit-content; }
+  #board { display:grid; grid-template-columns:repeat(8,1fr); width:min(84vw,400px);
+    background:#0d3a25; gap:1px; border:1px solid #0d3a25; border-radius:4px; overflow:hidden; }
+  .sq { aspect-ratio:1; background:#1c6a45; display:flex; align-items:center; justify-content:center;
+    position:relative; }
+  .sq.just { background:#2b8a5c; }
+  .sq i { display:block; width:78%; aspect-ratio:1; border-radius:50%; }
+  .sq i.k { background:#16181a; box-shadow:inset 0 1px 0 rgba(255,255,255,.14); }
+  .sq i.w { background:#f3ead8; box-shadow:inset 0 -1px 0 rgba(0,0,0,.22); }
+  .sq u { position:absolute; left:2px; top:1px; font-size:8px; font-weight:700; color:rgba(243,234,216,.5); text-decoration:none; }
+  .sq o { position:absolute; right:2px; bottom:0; font-size:8px; font-weight:700; color:rgba(243,234,216,.5); }
+  .sq.play::after { content:""; position:absolute; inset:8%; border-radius:50%; border:2px solid #d8a648; }
+  .controls { display:flex; gap:8px; align-items:center; }
+  button { font:inherit; border:0; border-radius:9px; padding:11px 12px; background:#2d251b; color:#f3ead8;
+    font-weight:800; font-size:13px; cursor:pointer; }
+  button:disabled { opacity:.35; cursor:default; }
+  #play { flex:1; background:#d8a648; color:#221c15; }
+  .status { text-align:center; color:#b3a890; font-size:12px; margin-top:10px; }
+  .said { text-align:center; font-size:15px; font-weight:700; margin-top:4px; }
+  .counts { display:flex; justify-content:center; gap:14px; align-items:center; margin-top:8px; font-size:13px; }
+  .pip { display:inline-block; width:12px; height:12px; border-radius:50%; vertical-align:-1px; margin-right:5px; }
+  .pip.k { background:#16181a; border:1px solid #4a4034; }
+  .pip.w { background:#f3ead8; }
+  #moves { max-height:280px; overflow:auto; margin-top:8px; }
+  #moves .row { display:flex; align-items:center; margin-bottom:4px; padding:3px 5px; border-radius:5px; cursor:pointer; }
+  #moves .row.on { background:#2d251b; }
+  #moves .num { width:30px; color:#b3a890; font-size:12px; }
+  #moves .m { flex:1; font-size:13.5px; }
+  .K { color:#b3a890; } .W { color:#f3ead8; }
+  .note { color:#b3a890; font-size:13px; line-height:1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FlipDeck</h1>
+  <p class="sub" id="sub">Loading the game…</p>
+  <div id="app" hidden>
+    <div class="panel">
+      <div class="names"><span id="nK"></span><span id="nW"></span></div>
+      <div class="bar"><div id="barK"></div><div id="band"></div><div id="mid"></div></div>
+      <div class="under"><span id="pK"></span><span id="acc"></span><span id="pW"></span></div>
+      <div id="graph"></div>
+    </div>
+    <div class="frame"><div id="board"></div></div>
+    <div class="panel">
+      <div class="controls">
+        <button id="first">&#9198;</button>
+        <button id="prev">&#9664;</button>
+        <button id="play">&#9654;&nbsp; Play</button>
+        <button id="next">&#9654;</button>
+        <button id="last">&#9197;</button>
+      </div>
+      <div class="counts"><span><span class="pip k"></span><b id="cK"></b></span><span><span class="pip w"></span><b id="cW"></b></span></div>
+      <div class="status" id="status"></div>
+      <div class="said" id="said"></div>
+    </div>
+    <div class="panel">
+      <div class="lbl">every move</div>
+      <div id="moves"></div>
+    </div>
+    <div class="panel note" id="foot"></div>
+  </div>
+  <div id="err" class="panel note" hidden></div>
+</div>
+
+<script>
+/* FlipDeck replay viewer.
+
+   The room already lives on the server under flipdeck/rooms/<code> and the
+   database is world-readable, so this page needs no key and no backend.
+
+   WHAT IT CAN AND CANNOT SHOW. FlipDeck splits every room: the board, the move
+   log, whose turn it is and the result are public, but each seat's HAND and DECK
+   live under flipdeck/priv/<code>/<seat>, which this page deliberately does not
+   read. So the replay shows the game as a spectator saw it — which is also why
+   the eval bar below runs the PUBLIC model rather than the full one.
+
+   The board is rebuilt from the log rather than stored per move: a `play` entry
+   carries its square and the exact discs it flipped, so replaying forward from
+   the opening four discs is exact (engine.boardAfter does the same thing). A
+   parity test in the app (tests/web-replay.test.ts) runs THIS FILE's functions
+   against the engine frame-for-frame so the two can never drift.
+
+   Lives at /replay/flipdeck/, deliberately OUTSIDE the /flipdeck/* prefix the
+   app claims as a Universal Link / App Link — a replay under that prefix gets
+   swallowed by the installed app, which then scrapes the digits out and tries to
+   join a finished game. */
+
+var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
+var LETTERS = "ABCDEFGH";
+var CORNERS = [0, 7, 56, 63];
+
+var code = (new URLSearchParams(location.search).get("code") || "").replace(/[^0-9]/g, "").slice(0, 4);
+var room = null, game = null, frames = [], evals = [], idx = 0, timer = null;
+
+function fail(msg) {
+  document.getElementById("sub").textContent = "";
+  var e = document.getElementById("err");
+  e.hidden = false; e.innerHTML = msg;
+}
+
+/* ---------------- board reconstruction (mirrors engine.boardAfter) ---------------- */
+function newBoard() {
+  var b = new Array(64).fill(0);
+  b[3 * 8 + 3] = 2; b[3 * 8 + 4] = 1;
+  b[4 * 8 + 3] = 1; b[4 * 8 + 4] = 2;
+  return b;
+}
+function boardAfter(log, n, starter) {
+  var b = newBoard();
+  for (var i = 0; i < Math.min(n, log.length); i++) {
+    var e = log[i];
+    if (e.type !== "play" || !e.sq) continue;
+    var c = LETTERS.indexOf(e.sq[0]);
+    var r = Number(e.sq.slice(1)) - 1;
+    if (c < 0 || r < 0 || r > 7) continue;
+    var colour = e.seat === starter ? 1 : 2;
+    b[r * 8 + c] = colour;
+    var fl = e.flipped || [];
+    for (var j = 0; j < fl.length; j++) b[fl[j]] = colour;
+  }
+  return b;
+}
+/* whose turn it is after n entries — a discard keeps the turn, anything else hands it over */
+function turnAfter(log, n, starter) {
+  var seat = starter;
+  for (var i = 0; i < Math.min(n, log.length); i++) {
+    if (log[i].type !== "discard") seat = log[i].seat === "A" ? "B" : "A";
+  }
+  return seat;
+}
+
+/* ---------------- the PUBLIC win-probability model (winprob.ts) ----------------
+   Four standardised features, logistic. Board and turn only — nothing here
+   touches a card, which is exactly why it is the model this page can run. */
+var PUBLIC_MODEL = { bias: -0.4162, terms: [
+  { name: "discs",   w: 0.8046, mean: -1.9781, sd: 9.2657 },
+  { name: "stable",  w: 0.5392, mean: -0.5106, sd: 5.5342 },
+  { name: "empties", w: -0.1785, mean: 35.5709, sd: 15.8611 },
+  { name: "toMove",  w: 0.1535, mean: -0.0386, sd: 0.9993 }
+] };
+
+function discDiff(board) {
+  var d = 0;
+  for (var i = 0; i < 64; i++) { if (board[i] === 1) d++; else if (board[i] === 2) d--; }
+  return d;
+}
+/* Discs anchored to a corner along a filled edge — a conservative subset of
+   true stability, matching evalfeat.stable exactly (including its walk order). */
+function stableFor(board, side) {
+  var n = 0;
+  for (var k = 0; k < 4; k++) {
+    var c = CORNERS[k];
+    if (board[c] !== side) continue;
+    n++;
+    var r0 = Math.floor(c / 8), c0 = c % 8;
+    var walks = [[0, r0 === 0 ? 1 : -1], [c0 === 0 ? 1 : -1, 0]];
+    for (var w = 0; w < 2; w++) {
+      var dr = walks[w][0], dc = walks[w][1];
+      var rr = r0 + dc, cc = c0 + dr;
+      while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && board[rr * 8 + cc] === side) { n++; rr += dc; cc += dr; }
+    }
+  }
+  return n;
+}
+function emptiesOf(board) {
+  var n = 0;
+  for (var i = 0; i < 64; i++) if (board[i] === 0) n++;
+  return n;
+}
+function featureValue(name, board, turn, starter) {
+  if (name === "discs") return discDiff(board);
+  if (name === "stable") return stableFor(board, 1) - stableFor(board, 2);
+  if (name === "empties") return emptiesOf(board);
+  if (name === "toMove") return turn === starter ? 1 : -1;
+  return 0;
+}
+/* MEASURED accuracy by stage — the bar must never claim more confidence than
+   the model has actually earned this far into the game. */
+function stageAccuracy(empties) {
+  if (empties >= 45) return 0.650;
+  if (empties >= 30) return 0.661;
+  if (empties >= 18) return 0.685;
+  return 0.803;
+}
+function winProbability(board, turn, starter) {
+  var s = PUBLIC_MODEL.bias;
+  for (var i = 0; i < PUBLIC_MODEL.terms.length; i++) {
+    var t = PUBLIC_MODEL.terms[i];
+    s += t.w * ((featureValue(t.name, board, turn, starter) - t.mean) / t.sd);
+  }
+  var p = 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, s))));
+  var emp = emptiesOf(board);
+  var acc = stageAccuracy(emp);
+  return { pBlack: 0.5 + (p - 0.5) * 2 * (acc - 0.5), rawBlack: p, accuracy: acc };
+}
+
+/* ---------------- move text (mirrors components.moveText, spectator voice) ---------------- */
+function face(x) { return x === "W" ? "★" : x; }
+function moveText(e, nameOf) {
+  var who = nameOf(e.seat);
+  if (e.type === "play") {
+    var cards = e.cards && e.cards.length === 2 ? " (" + e.cards.map(face).join("+") + ")" : "";
+    return who + " played " + e.sq + cards + (e.flips ? " · flipped " + e.flips : "");
+  }
+  if (e.type === "pass") return who + " passed";
+  var tossed = (e.tossed || []).map(face).join("+");
+  var n = (e.draws || []).length || 1;
+  return who + " discarded " + tossed + " → drew " + n;
+}
+
+/* ---------------- load ---------------- */
+if (!code) {
+  fail("This link doesn't have a game code in it. Ask for the replay link again.");
+} else {
+  fetch(DB + "/flipdeck/rooms/" + code + ".json")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (data) {
+      if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
+      room = data; game = room.game || null;
+      if (!game || !Array.isArray(game.log) || !game.log.length) {
+        fail("This game was played before moves were recorded, so there's nothing to step through.");
+        return;
+      }
+      build(); start();
+    })
+    .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
+}
+
+var blackName, whiteName, starter;
+
+function build() {
+  starter = game.starter === "B" ? "B" : "A";
+  var log = game.log;
+  frames = [];
+  for (var n = 0; n <= log.length; n++) {
+    frames.push({
+      board: boardAfter(log, n, starter),
+      turn: turnAfter(log, n, starter),
+      entry: n > 0 ? log[n - 1] : null,
+      index: n
+    });
+  }
+  evals = frames.map(function (f) { return winProbability(f.board, f.turn, starter); });
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c];
+  });
+}
+function seatName(seat) {
+  var s = room.seats && room.seats[seat];
+  return (s && s.name) || (seat === "A" ? "Player A" : "Player B");
+}
+function counts(board) {
+  var k = 0, w = 0;
+  for (var i = 0; i < 64; i++) { if (board[i] === 1) k++; else if (board[i] === 2) w++; }
+  return { k: k, w: w };
+}
+
+function start() {
+  var whiteSeat = starter === "A" ? "B" : "A";
+  blackName = seatName(starter);
+  whiteName = seatName(whiteSeat);
+
+  var fin = counts(frames[frames.length - 1].board);
+  var res;
+  if (!game.over) res = "still in progress";
+  else if (game.winner === "tie" || !game.winner) res = "a tie, " + fin.k + "–" + fin.w;
+  else res = seatName(game.winner) + " won " + Math.max(fin.k, fin.w) + "–" + Math.min(fin.k, fin.w);
+  document.getElementById("sub").textContent = blackName + " vs " + whiteName + " — " + res;
+  document.getElementById("nK").innerHTML = '<span class="pip k"></span>' + esc(blackName);
+  document.getElementById("nW").innerHTML = esc(whiteName) + '<span class="pip w" style="margin:0 0 0 5px"></span>';
+
+  var board = document.getElementById("board");
+  for (var i = 0; i < 64; i++) board.appendChild(document.createElement("div"));
+
+  var g = document.getElementById("graph");
+  for (var f = 0; f < frames.length; f++) {
+    var col = document.createElement("div");
+    col.className = "col";
+    var fill = document.createElement("i");
+    fill.style.height = Math.max(1, evals[f].pBlack * 38) + "px";
+    col.appendChild(fill);
+    g.appendChild(col);
+  }
+
+  var moves = document.getElementById("moves"), log = game.log;
+  for (var m = 0; m < log.length; m++) {
+    var d = document.createElement("div");
+    d.className = "row";
+    d.dataset.i = m + 1;
+    d.innerHTML = '<span class="num">' + (m + 1) + '.</span><span class="m ' +
+      (log[m].seat === starter ? "K" : "W") + '">' + esc(moveText(log[m], seatName)) + "</span>";
+    moves.appendChild(d);
+  }
+  moves.onclick = function (ev) {
+    var t = ev.target.closest ? ev.target.closest(".row") : null;
+    if (t) { stop(); go(+t.dataset.i); }
+  };
+
+  document.getElementById("first").onclick = function () { stop(); go(0); };
+  document.getElementById("prev").onclick = function () { stop(); go(idx - 1); };
+  document.getElementById("next").onclick = function () { stop(); go(idx + 1); };
+  document.getElementById("last").onclick = function () { stop(); go(frames.length - 1); };
+  document.getElementById("play").onclick = function () {
+    if (timer) { stop(); return; }
+    if (idx >= frames.length - 1) go(0);
+    timer = setInterval(function () {
+      if (idx >= frames.length - 1) { stop(); return; }
+      go(idx + 1);
+    }, 750);
+    render();
+  };
+
+  document.getElementById("foot").innerHTML =
+    "The bar is a forecast, not a score — it reads the board only, because each " +
+    "player's cards stay private even after the game. It is right about " +
+    "two thirds of the time early on, and it says so underneath.";
+
+  document.getElementById("app").hidden = false;
+  go(0);
+}
+
+function stop() { if (timer) { clearInterval(timer); timer = null; render(); } }
+function go(n) { idx = Math.max(0, Math.min(frames.length - 1, n)); render(); }
+
+function pct(x) { return Math.max(0, Math.min(100, x * 100)) + "%"; }
+
+function render() {
+  var f = frames[idx], ev = evals[idx];
+  var e = f.entry;
+  var justPlayed = -1, flipped = {};
+  if (e && e.type === "play" && e.sq) {
+    var c = LETTERS.indexOf(e.sq[0]), r = Number(e.sq.slice(1)) - 1;
+    if (c >= 0 && r >= 0 && r < 8) justPlayed = r * 8 + c;
+    var fl = e.flipped || [];
+    for (var j = 0; j < fl.length; j++) flipped[fl[j]] = 1;
+  }
+
+  var cells = document.getElementById("board").children;
+  for (var i = 0; i < 64; i++) {
+    var rr = Math.floor(i / 8), cc = i % 8;
+    var el = cells[i];
+    el.className = "sq" + (flipped[i] ? " just" : "") + (i === justPlayed ? " play" : "");
+    var v = f.board[i];
+    var edge = "";
+    if (cc === 0) edge += "<u>" + (rr + 1) + "</u>";
+    if (rr === 7) edge += "<o>" + LETTERS[cc] + "</o>";
+    el.innerHTML = (v ? '<i class="' + (v === 1 ? "k" : "w") + '"></i>' : "") + edge;
+  }
+
+  document.getElementById("barK").style.width = pct(ev.pBlack);
+  // the band is one measured forecast error wide, straddling the join
+  var half = ev.accuracy - 0.5;
+  document.getElementById("band").style.left = pct(ev.pBlack - half);
+  document.getElementById("band").style.width = pct(Math.min(1, ev.pBlack + half) - Math.max(0, ev.pBlack - half));
+  document.getElementById("pK").textContent = Math.round(ev.pBlack * 100) + "%";
+  document.getElementById("pW").textContent = Math.round((1 - ev.pBlack) * 100) + "%";
+  document.getElementById("acc").textContent = "right " + Math.round(ev.accuracy * 100) + "% of the time here";
+
+  var cnt = counts(f.board);
+  document.getElementById("cK").textContent = cnt.k;
+  document.getElementById("cW").textContent = cnt.w;
+
+  var cols = document.getElementById("graph").children;
+  for (var g2 = 0; g2 < cols.length; g2++) cols[g2].className = "col" + (g2 === idx ? " on" : "");
+
+  document.getElementById("status").textContent =
+    idx === 0 ? "The opening position" : "Move " + idx + " of " + (frames.length - 1);
+  document.getElementById("said").innerHTML = e
+    ? '<span class="' + (e.seat === starter ? "K" : "W") + '">' + esc(moveText(e, seatName)) + "</span>"
+    : "";
+
+  document.getElementById("play").innerHTML = timer ? "&#10074;&#10074;&nbsp; Pause"
+    : idx >= frames.length - 1 ? "&#9654;&nbsp; Replay" : "&#9654;&nbsp; Play";
+  document.getElementById("first").disabled = idx === 0;
+  document.getElementById("prev").disabled = idx === 0;
+  document.getElementById("next").disabled = idx >= frames.length - 1;
+  document.getElementById("last").disabled = idx >= frames.length - 1;
+
+  var rows = document.getElementById("moves").children;
+  for (var m = 0; m < rows.length; m++) {
+    var on = +rows[m].dataset.i === idx;
+    rows[m].className = "row" + (on ? " on" : "");
+    if (on) rows[m].scrollIntoView({ block: "nearest" });
+  }
+}
+</script>
+</body>
+</html>
