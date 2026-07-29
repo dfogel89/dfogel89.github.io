@@ -116,6 +116,20 @@
    join a finished game. */
 
 var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
+/* FlipDeck's database rules are the HARDENED ones (database.rules.json in the
+   app repo), unlike the other games' still-open wildcard. A room is
+   `".read": "auth != null"` — readable by any SIGNED-IN device that knows the
+   code — so an anonymous fetch gets a flat 401 and this page has to sign in the
+   same way the app does: anonymous sign-in via the Identity Toolkit REST API,
+   then pass the token as ?auth=.
+
+   The web API key below is not a secret. It ships inside every copy of the app
+   already and identifies the project rather than authorising anything; the real
+   protection is the rules. And those rules still hold here: a signed-in stranger
+   can read the public room and CANNOT read flipdeck/priv/<code>/<seat>, which is
+   where both players' cards live. Verified against the live database, not
+   assumed — the private path returns 401 with this very token. */
+var API_KEY = "AIzaSyAF5Sk46fRVitCbu0Ca9Ev__HZ2mIeMrU0";
 var LETTERS = "ABCDEFGH";
 var CORNERS = [0, 7, 56, 63];
 
@@ -239,10 +253,24 @@ function moveText(e, nameOf) {
 }
 
 /* ---------------- load ---------------- */
+/** Anonymous sign-in, so the rules will hand over the public room. */
+function signIn() {
+  return fetch("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + API_KEY, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ returnSecureToken: true }),
+  })
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (j) { return j.idToken; });
+}
+
 if (!code) {
   fail("This link doesn't have a game code in it. Ask for the replay link again.");
 } else {
-  fetch(DB + "/flipdeck/rooms/" + code + ".json")
+  signIn()
+    .then(function (token) {
+      return fetch(DB + "/flipdeck/rooms/" + code + ".json?auth=" + encodeURIComponent(token));
+    })
     .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
     .then(function (data) {
       if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
