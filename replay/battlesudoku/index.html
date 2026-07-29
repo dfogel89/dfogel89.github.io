@@ -267,6 +267,12 @@ function build() {
     var a = evalLead(f.A, s.A), b = evalLead(f.B, s.B);
     return (a + b <= 0) ? 0.5 : a / (a + b); // an untouched position is a true dead heat
   });
+  /* At the FINAL frame of a decided game the result is known with certainty, so
+     show it rather than evalLead's reading. Without this a won game ends at
+     something like 56/44, which reads as "close" right next to a line saying
+     who won — evalLead measures position, and a sunk fleet is a fact, not a
+     position. Same rule in the app's Review screen. */
+  if (room.winner && evals.length) evals[evals.length - 1] = (room.winner === "A" ? 1 : 0);
 
   document.getElementById("sub").textContent =
     nameOf("A") + " vs " + nameOf("B") + " · game " + code +
