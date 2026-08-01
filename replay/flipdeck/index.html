@@ -176,66 +176,139 @@ function turnAfter(log, n, starter) {
 /* ---------------- the PUBLIC win-probability model (winprob.ts) ----------------
    Four standardised features, logistic. Board and turn only — nothing here
    touches a card, which is exactly why it is the model this page can run. */
-var PUBLIC_MODEL = { bias: -0.4162, terms: [
-  { name: "discs",   w: 0.8046, mean: -1.9781, sd: 9.2657 },
-  { name: "stable",  w: 0.5392, mean: -0.5106, sd: 5.5342 },
-  { name: "empties", w: -0.1785, mean: 35.5709, sd: 15.8611 },
-  { name: "toMove",  w: 0.1535, mean: -0.0386, sd: 0.9993 }
+/* ---------------- eval bar ----------------
+   SPECTATOR_MODEL, generated from winprob.ts — do not hand-edit the numbers.
+   tests/web-replay.test.ts compares this page against winProbabilitySpectator()
+   and fails on any drift.
+
+   History, because the previous version rotted silently: this block used to hold
+   a hand-copied 4-term model (discs/stable/empties/toMove, bias -0.4162) plus a
+   stageAccuracy() cap. The app refit its eval on 2026-07-31 and this page was
+   never updated, so replays showed an eval bar two generations old. The parity
+   test caught it; nobody had looked.
+
+   Why this page gets its OWN model rather than the app's PUBLIC one: hand
+   snapshots are local-only (App.tsx), so a replay reconstructed from the
+   Firebase move log has no hand sizes and cannot compute PUBLIC's `handSize`
+   term. These are PUBLIC's five board-computable terms, refit without it.
+   Costs 0.0033 in error against PUBLIC; beats what this page used to run by
+   0.0117 (~15x its standard error). No cap: the raw model measured
+   well-calibrated, and the old cap was actively harmful. */
+var SPECTATOR_MODEL = { bias: 0.0643, terms: [
+  { name: "toMove",      w: 0.1513, mean: 0.379,   sd: 0.9254 },
+  { name: "discs",       w: 0.3258, mean: -0.027,  sd: 6.2457 },
+  { name: "stableFull",  w: 0.4251, mean: -0.2428, sd: 3.9341 },
+  { name: "mob_x_early", w: 0.1961, mean: 0.588,   sd: 4.057  },
+  { name: "totFlipGeo",  w: 0.1157, mean: -0.3619, sd: 6.8339 }
 ] };
+
+var DIRS = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+function inB(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
 
 function discDiff(board) {
   var d = 0;
   for (var i = 0; i < 64; i++) { if (board[i] === 1) d++; else if (board[i] === 2) d--; }
   return d;
 }
-/* Discs anchored to a corner along a filled edge — a conservative subset of
-   true stability, matching evalfeat.stable exactly (including its walk order). */
-function stableFor(board, side) {
-  var n = 0;
-  for (var k = 0; k < 4; k++) {
-    var c = CORNERS[k];
-    if (board[c] !== side) continue;
-    n++;
-    var r0 = Math.floor(c / 8), c0 = c % 8;
-    var walks = [[0, r0 === 0 ? 1 : -1], [c0 === 0 ? 1 : -1, 0]];
-    for (var w = 0; w < 2; w++) {
-      var dr = walks[w][0], dc = walks[w][1];
-      var rr = r0 + dc, cc = c0 + dr;
-      while (rr >= 0 && rr < 8 && cc >= 0 && cc < 8 && board[rr * 8 + cc] === side) { n++; rr += dc; cc += dr; }
-    }
-  }
-  return n;
-}
 function emptiesOf(board) {
   var n = 0;
   for (var i = 0; i < 64; i++) if (board[i] === 0) n++;
   return n;
 }
+/* Mirrors engine.flipsFor exactly. */
+function flipsFor(b, p, r, c) {
+  if (b[r * 8 + c] !== 0) return [];
+  var opp = 3 - p, out = [];
+  for (var k = 0; k < DIRS.length; k++) {
+    var dr = DIRS[k][0], dc = DIRS[k][1];
+    var rr = r + dr, cc = c + dc, line = [];
+    while (inB(rr, cc) && b[rr * 8 + cc] === opp) { line.push(rr * 8 + cc); rr += dr; cc += dc; }
+    if (line.length > 0 && inB(rr, cc) && b[rr * 8 + cc] === p) out = out.concat(line);
+  }
+  return out;
+}
+/* Mirrors engine.isLegal: empty, and either adjacent to one of ours or flipping
+   something. Adjacency alone is enough in FlipDeck, unlike Othello. */
+function isLegal(b, p, r, c) {
+  if (b[r * 8 + c] !== 0) return false;
+  for (var k = 0; k < DIRS.length; k++) {
+    var rr = r + DIRS[k][0], cc = c + DIRS[k][1];
+    if (inB(rr, cc) && b[rr * 8 + cc] === p) return true;
+  }
+  return flipsFor(b, p, r, c).length > 0;
+}
+function legalCount(board, side) {
+  var n = 0;
+  for (var r = 0; r < 8; r++) for (var c = 0; c < 8; c++) if (isLegal(board, side, r, c)) n++;
+  return n;
+}
+/* Card-blind total swing available — the geometric ceiling, so it needs no hands. */
+function totalFlipGeo(board, side) {
+  var t = 0;
+  for (var r = 0; r < 8; r++) for (var c = 0; c < 8; c++) {
+    if (!isLegal(board, side, r, c)) continue;
+    t += flipsFor(board, side, r, c).length;
+  }
+  return t;
+}
+/* Mirrors evalfeat.stableFull: a disc is safe along an AXIS if the line is full,
+   or it is against the wall that way, or the neighbour along it is ours AND
+   itself safe. Stable when that holds on all four axes. Iterated to a fixpoint
+   because safety propagates outward from the corners. The old stableFor() walked
+   only the two edge runs out of a corner, so an enclosed disc that can never be
+   flipped scored zero. */
+var AXES = [[[0,1],[0,-1]], [[1,0],[-1,0]], [[1,1],[-1,-1]], [[1,-1],[-1,1]]];
+function stableFull(board, side) {
+  var st = new Array(64); for (var i = 0; i < 64; i++) st[i] = false;
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (var i2 = 0; i2 < 64; i2++) {
+      if (st[i2] || board[i2] !== side) continue;
+      var r = Math.floor(i2 / 8), c = i2 % 8, allAxes = true;
+      for (var a = 0; a < AXES.length; a++) {
+        var axis = AXES[a], safe = false;
+        for (var d = 0; d < 2; d++) {
+          var rr = r + axis[d][0], cc = c + axis[d][1];
+          if (!inB(rr, cc)) { safe = true; break; }
+          var j = rr * 8 + cc;
+          if (board[j] === side && st[j]) { safe = true; break; }
+        }
+        if (!safe) {
+          var full = true;
+          for (var d2 = 0; d2 < 2 && full; d2++) {
+            var r2 = r + axis[d2][0], c2 = c + axis[d2][1];
+            while (inB(r2, c2)) {
+              if (board[r2 * 8 + c2] === 0) { full = false; break; }
+              r2 += axis[d2][0]; c2 += axis[d2][1];
+            }
+          }
+          safe = full;
+        }
+        if (!safe) { allAxes = false; break; }
+      }
+      if (allAxes) { st[i2] = true; changed = true; }
+    }
+  }
+  var n = 0; for (var i3 = 0; i3 < 64; i3++) if (st[i3]) n++;
+  return n;
+}
 function featureValue(name, board, turn, starter) {
   if (name === "discs") return discDiff(board);
-  if (name === "stable") return stableFor(board, 1) - stableFor(board, 2);
-  if (name === "empties") return emptiesOf(board);
+  if (name === "stableFull") return stableFull(board, 1) - stableFull(board, 2);
   if (name === "toMove") return turn === starter ? 1 : -1;
+  if (name === "mob_x_early") return (legalCount(board, 1) - legalCount(board, 2)) * (emptiesOf(board) / 60);
+  if (name === "totFlipGeo") return totalFlipGeo(board, 1) - totalFlipGeo(board, 2);
   return 0;
 }
-/* MEASURED accuracy by stage — the bar must never claim more confidence than
-   the model has actually earned this far into the game. */
-function stageAccuracy(empties) {
-  if (empties >= 45) return 0.650;
-  if (empties >= 30) return 0.661;
-  if (empties >= 18) return 0.685;
-  return 0.803;
-}
 function winProbability(board, turn, starter) {
-  var s = PUBLIC_MODEL.bias;
-  for (var i = 0; i < PUBLIC_MODEL.terms.length; i++) {
-    var t = PUBLIC_MODEL.terms[i];
+  var s = SPECTATOR_MODEL.bias;
+  for (var i = 0; i < SPECTATOR_MODEL.terms.length; i++) {
+    var t = SPECTATOR_MODEL.terms[i];
     s += t.w * ((featureValue(t.name, board, turn, starter) - t.mean) / t.sd);
   }
   var p = 1 / (1 + Math.exp(-Math.max(-30, Math.min(30, s))));
-  var emp = emptiesOf(board);
-  var acc = stageAccuracy(emp);
-  return { pBlack: 0.5 + (p - 0.5) * 2 * (acc - 0.5), rawBlack: p, accuracy: acc };
+  return { pBlack: p, rawBlack: p, accuracy: null };
 }
 
 /* ---------------- move text (mirrors components.moveText, spectator voice) ---------------- */
