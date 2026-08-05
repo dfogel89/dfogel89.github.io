@@ -133,12 +133,18 @@ if (!code) {
     .then(function (data) {
       if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
       room = data;
-      var h = room.history || [];
-      if (!h.length || typeof h[h.length - 1].b !== "string") {
+      room.history = historyRows(room.history);
+      build();
+      if (logCut > 0) {
+        fail("Part of this game's move record didn't survive, so a replay would show positions the game never reached.");
+        return;
+      }
+      var h = room.history;
+      if (!h.length || !h.every(function (e) { return typeof e.b === "string"; })) {
         fail("This game was played before positions were recorded, so there's nothing to step through.");
         return;
       }
-      build(); start();
+      start();
     })
     .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
 }
@@ -169,24 +175,64 @@ function packBoard(b) {
 }
 function kingPos(b, c) { var t = c + "K"; for (var i = 0; i < 64; i++) if (b[i] === t) return i; return -1; }
 
+/* Mirrors parseHistEntry() / historyRows() in the app's engine.ts.
+
+   The review reads the history and NOTHING ELSE, so an entry that cannot be
+   trusted is a frame claiming to be a position the game never reached — and
+   unpackBoard turns any string that is not exactly 64 legal characters into an
+   EMPTY BOARD without a word. A null hole (how RTDB hands a sparse array back)
+   used to throw on `e.b` and kill the page outright. Count what cannot be read
+   and refuse, rather than showing a convincing fiction. */
+function validEntry(e) {
+  if (!e || typeof e !== "object" || Object.prototype.toString.call(e) === "[object Array]") return false;
+  if (e.by !== "w" && e.by !== "b") return false;
+  if (typeof e.san !== "string") return false;
+  if (e.b != null && (typeof e.b !== "string" || !/^[KQRBNPkqrbnp.]{64}$/.test(e.b))) return false;
+  if (e.ha != null && typeof e.ha !== "string") return false;
+  if (e.hb != null && typeof e.hb !== "string") return false;
+  if (e.ck != null && e.ck !== "w" && e.ck !== "b") return false;
+  if (e.cap != null && (typeof e.cap !== "string" || e.cap.length !== 1 || "KQRBNP".indexOf(e.cap) < 0)) return false;
+  if (e.fk != null && (typeof e.fk !== "string" || !/^[wb]{1,4}$/.test(e.fk))) return false;
+  return true;
+}
+/* RTDB hands a sparse array back as a keyed object; reading that as "no history"
+   loses the whole game silently. Recover it in index order. */
+function historyRows(v) {
+  if (Object.prototype.toString.call(v) === "[object Array]") return v;
+  if (v && typeof v === "object") {
+    return Object.keys(v).filter(function (k) { return /^\d+$/.test(k); })
+      .sort(function (a, b) { return Number(a) - Number(b); })
+      .map(function (k) { return v[k]; });
+  }
+  return [];
+}
+
+var logCut = 0;
 function build() {
-  frames = [{ board: startBoard(), handA: [], handB: [], check: null, entry: null, index: 0 }];
-  var h = room.history || [];
+  frames = [{ board: startBoard(), handA: [], handB: [], check: null, off: "", entry: null, index: 0 }];
+  var h = historyRows(room.history);
+  logCut = 0;
   for (var i = 0; i < h.length; i++) {
     var e = h[i], prev = frames[frames.length - 1];
+    if (!validEntry(e)) { logCut++; continue; }
     frames.push({
       board: e.b ? unpackBoard(e.b) : prev.board,
       handA: e.ha ? e.ha.split("|").filter(Boolean) : [],
       handB: e.hb ? e.hb.split("|").filter(Boolean) : [],
       check: e.ck === "w" || e.ck === "b" ? e.ck : null,
+      off: typeof e.fk === "string" ? e.fk : "",
       entry: e, index: i + 1,
     });
   }
-  evals = frames.map(function (f) { return evalMaterial(f.board); });
+  evals = frames.map(function (f) { return evalMaterial(f.board, f.off); });
 }
 
 /* the same eval the app's review screen shows: plain MATERIAL, nothing more */
-function evalMaterial(board) {
+/* `off` is the owners of any knights sitting OFF the board (Flank). They are
+   safe and coming back, not lost, so they count — the bar used to read three
+   pawns down for as long as a knight was out there and back up when it
+   returned, a dip and a recovery that never happened. */
+function evalMaterial(board, off) {
   var w = 0, b = 0;
   for (var i = 0; i < 64; i++) {
     var p = board[i];
@@ -194,6 +240,8 @@ function evalMaterial(board) {
     var v = PVAL[p[1]] || 0;
     if (p[0] === "w") w += v; else b += v;
   }
+  var o = off || "";
+  for (var k = 0; k < o.length; k++) { if (o[k] === "w") w += PVAL.N; else if (o[k] === "b") b += PVAL.N; }
   var tot = w + b;
   return { share: tot > 0 ? w / tot : 0.5, diff: w - b, w: w, b: b };
 }
