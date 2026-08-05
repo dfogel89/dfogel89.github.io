@@ -398,7 +398,14 @@ function start() {
   var res;
   if (!game.over) res = "still in progress";
   else if (game.winner === "tie" || !game.winner) res = "a tie, " + fin.k + "–" + fin.w;
-  else res = seatName(game.winner) + " won " + Math.max(fin.k, fin.w) + "–" + Math.min(fin.k, fin.w);
+  else {
+    /* The winner's OWN count first, not max–min. A game can end with the winner
+       BEHIND on the board — a clock ran out, or a "lose points" penalty decided
+       it — and max–min silently credited the winner with the loser's discs. */
+    var wk = game.winner === starter ? fin.k : fin.w;
+    var lk = game.winner === starter ? fin.w : fin.k;
+    res = seatName(game.winner) + " won " + wk + "–" + lk;
+  }
   document.getElementById("sub").textContent = blackName + " vs " + whiteName + " — " + res;
   document.getElementById("nK").innerHTML = '<span class="pip k"></span>' + esc(blackName);
   document.getElementById("nW").innerHTML = esc(whiteName) + '<span class="pip w" style="margin:0 0 0 5px"></span>';
