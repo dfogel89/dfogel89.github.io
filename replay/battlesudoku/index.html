@@ -139,13 +139,24 @@
 
 var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
 
-/* Eval weights, copied EXACTLY from DEFAULT_BOT in the app's bot.ts so the bar
-   agrees with the bot's own reading of a position. evalLead scores hits, hits
-   that extend a wounded ship, digits known, and shots in hand.
-   The bar shows a RATIO, so a common scale factor would cancel — but the
-   weights RELATIVE to each other must match, and tests/web-replay.test.ts
-   asserts these four numbers against bot.ts rather than trusting this comment. */
-var W_HIT = 1, W_CLUSTER = 0.6, W_KNOWN = 0.05, W_BANKED = 0.4;
+/* Eval weights, copied EXACTLY from EVAL_BETA in the app's evalCalibration.ts
+   — a logistic-regression model fit on 18,000 harvested positions from 3,000
+   self-play games and checked against 600 held-out positions x 50 rollouts
+   each (see BOT_BACKLOG.md), NOT the bot's own evalLead (that still drives
+   the bot's risk logic, untouched, tuned for decisions rather than outcomes).
+   tests/web-replay.test.ts asserts these numbers against evalCalibration.ts
+   rather than trusting this comment. */
+var BETA = {
+  hitLead: -0.2580, clusterLead: 0.2905, knownLead: 0.0083, stage: 0.0004,
+  stageHit: 0.0102, stageCluster: -0.0081, stageKnown: 0.0009,
+  /* PLACEHOLDERS, mirroring evalCalibration.ts exactly: zeroed until the
+     maximal-play refit lands. They are carried here anyway, at zero, so the
+     parity test compares all TEN weights — if only seven crossed over, a refit
+     that gave tempo a value would change the app's bar and leave this page
+     quietly reading the old model, which is the drift this page has already
+     suffered once. */
+  toMove: 0, stageToMove: 0, bankedToMove: 0,
+};
 
 var SPEEDS = [{ t: "1×", ms: 700 }, { t: "2×", ms: 350 }, { t: "4×", ms: 150 }];
 
@@ -191,7 +202,7 @@ if (!code) {
     .then(function (data) {
       if (!data) { fail("There's no game with code <b>" + code + "</b> any more."); return; }
       room = data;
-      log = arr(room.log);
+      log = mergeSalvoLog(arr(room.log), room.salvoLog);
       if (!log.length) {
         fail("This game was played before replays were recorded, so there's nothing to step through.");
         return;
@@ -199,6 +210,43 @@ if (!code) {
       build();
     })
     .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
+}
+
+/* Fold the opening salvo back into the log, mirroring mergeSalvoLog() in
+   engine.ts. The salvo is written through a conflict-free multi-path update
+   rather than the whole-room transaction, so its entries arrive under a
+   per-seat node keyed by cell index. In practice the first real move rewrites
+   the whole room and folds them, so a finished game normally arrives with them
+   already in `log` — this is here so a link shared from a game that somehow
+   did not is still replayed correctly rather than nine digits short a side. */
+function mergeSalvoLog(lg, raw) {
+  if (!raw || typeof raw !== "object") return lg;
+  var seen = {}, pend = [], i, k;
+  for (i = 0; i < lg.length; i++) if (lg[i].o) seen[lg[i].s + ":" + lg[i].i] = 1;
+  var seats = ["A", "B"];
+  for (var q = 0; q < seats.length; q++) {
+    var node = raw[seats[q]];
+    if (!node || typeof node !== "object") continue;
+    var vals = arr(node);
+    for (k = 0; k < vals.length; k++) {
+      var v = vals[k];
+      if (!v || typeof v !== "object") continue;
+      var st = v.s === "B" ? "B" : "A";
+      var ix = typeof v.i === "number" ? v.i : -1;
+      if (ix < 0 || ix > 80 || seen[st + ":" + ix]) continue;
+      seen[st + ":" + ix] = 1;
+      var e = { s: st, i: ix, t: "reveal", o: true, tn: 0 };
+      if (v.v != null) e.v = v.v;
+      pend.push({ e: e, ts: typeof v.ts === "number" ? v.ts : 0 });
+    }
+  }
+  if (!pend.length) return lg;
+  pend.sort(function (a, b) { return a.ts - b.ts; });
+  var cut = 0;
+  while (cut < lg.length && lg[cut].o) cut++;
+  var out = lg.slice(0, cut);
+  for (i = 0; i < pend.length; i++) out.push(pend[i].e);
+  return out.concat(lg.slice(cut));
 }
 
 /* ---- replay: rebuild every frame from two empty boards ----
@@ -241,7 +289,7 @@ function shotsFor(upTo) {
   }
   return s;
 }
-function evalLead(board, banked) {
+function boardFeatures(board) {
   var hits = 0, known = 0, cluster = 0;
   for (var i = 0; i < 81; i++) {
     var c = board[i];
@@ -252,7 +300,22 @@ function evalLead(board, banked) {
     if ((col > 0 && board[i - 1].shot === "hit") || (col < 8 && board[i + 1].shot === "hit") ||
         (r > 0 && board[i - 9].shot === "hit") || (r < 8 && board[i + 9].shot === "hit")) cluster++;
   }
-  return W_HIT * hits + W_CLUSTER * cluster + W_KNOWN * known + W_BANKED * Math.max(0, banked);
+  return { hits: hits, known: known, cluster: cluster };
+}
+/* P(A wins) at this frame. NO intercept, so an untouched position (all-zero
+   features) reads exactly logit 0 = 50/50 — same property the old formula had.
+   `toMove` is +1 A / -1 B / 0 neither and belongs to the FRAME (whoever plays
+   the next logged entry), not to the finished room's `turn` field, which is the
+   same at every frame. `bankedLead` is A's banked shots minus B's. */
+function winProb(boardA, boardB, stage, toMove, bankedLead) {
+  var fa = boardFeatures(boardA), fb = boardFeatures(boardB);
+  var hitLead = fa.hits - fb.hits, clusterLead = fa.cluster - fb.cluster, knownLead = fa.known - fb.known;
+  var tm = toMove || 0, bl = bankedLead || 0;
+  var z = BETA.hitLead * hitLead + BETA.clusterLead * clusterLead + BETA.knownLead * knownLead +
+    BETA.stage * stage + BETA.stageHit * stage * hitLead + BETA.stageCluster * stage * clusterLead +
+    BETA.stageKnown * stage * knownLead +
+    BETA.toMove * tm + BETA.stageToMove * stage * tm + BETA.bankedToMove * bl * tm;
+  return 1 / (1 + Math.exp(-z));
 }
 
 function build() {
@@ -263,16 +326,19 @@ function build() {
     frames.push(cloneBoards(boards));
   }
   evals = frames.map(function (f, k) {
-    var s = shotsFor(k);
-    var a = evalLead(f.A, s.A), b = evalLead(f.B, s.B);
-    return (a + b <= 0) ? 0.5 : a / (a + b); // an untouched position is a true dead heat
+    var mover = k < log.length ? log[k].s : null;
+    var sh = shotsFor(k);
+    return winProb(f.A, f.B, k, mover === "A" ? 1 : mover === "B" ? -1 : 0, sh.A - sh.B);
   });
   /* At the FINAL frame of a decided game the result is known with certainty, so
-     show it rather than evalLead's reading. Without this a won game ends at
+     show it rather than the model's reading. Without this a won game ends at
      something like 56/44, which reads as "close" right next to a line saying
-     who won — evalLead measures position, and a sunk fleet is a fact, not a
+     who won — the model measures position, and a sunk fleet is a fact, not a
      position. Same rule in the app's Review screen. */
-  if (room.winner && evals.length) evals[evals.length - 1] = (room.winner === "A" ? 1 : 0);
+  // NOT when the record is incomplete: a truncated log's last entry is a
+  // mid-game position, and calling that a certain win is the confident lie
+  // logTrunc exists to prevent. Same rule in the app's Review screen.
+  if (room.winner && !room.logTrunc && evals.length) evals[evals.length - 1] = (room.winner === "A" ? 1 : 0);
 
   document.getElementById("sub").textContent =
     nameOf("A") + " vs " + nameOf("B") + " · game " + code +
