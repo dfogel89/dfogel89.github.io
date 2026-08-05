@@ -142,19 +142,48 @@ if (!code) {
         fail("This game hasn't reached the board yet, or it was played before replays were recorded.");
         return;
       }
-      build(); start();
+      build();
+      if (logCut > 0) {
+        fail("Part of this game's move record didn't survive, so a replay would show positions the game never reached.");
+        return;
+      }
+      start();
     })
     .catch(function () { fail("Couldn't load that game. Check your connection and try again."); });
 }
 
+/* Mirrors parseLogEntry() in the app's engine.ts. A replay applies the log
+   FORWARD from an empty board, so an entry that can't be trusted doesn't spoil
+   one frame — it puts every LATER frame on a board that never existed. The page
+   counts what it can't read (logCut) and refuses rather than showing a
+   convincing fiction. */
+function validEntry(e) {
+  if (!e || typeof e !== "object" || Object.prototype.toString.call(e) === "[object Array]") return false;
+  if (e.by != null && e.by !== "A" && e.by !== "B") return false;
+  var hasCells = e.cells != null, hasTiles = e.tiles != null;
+  if (!hasCells && !hasTiles) return true;
+  if (Object.prototype.toString.call(e.cells) !== "[object Array]" || typeof e.tiles !== "string") return false;
+  if (e.cells.length !== e.tiles.length || e.cells.length === 0) return false;
+  var seen = {};
+  for (var i = 0; i < e.cells.length; i++) {
+    var c = e.cells[i];
+    if (typeof c !== "number" || c !== Math.floor(c) || c < 0 || c >= N * N) return false;
+    if (seen[c]) return false;
+    seen[c] = true;
+  }
+  return true;
+}
+
 /* ---- rebuild every position from the log's placements ---- */
+var logCut = 0;
 function build() {
   var board = {}, rackA = "", rackB = "", bag = 0;
-  frames = [];
+  frames = []; logCut = 0;
   for (var k = 0; k < room.log.length; k++) {
     var e = room.log[k], cells = [];
-    if (e.cells && e.tiles && e.cells.length === e.tiles.length) {
-      var blanks = e.blanks || new Array(e.cells.length + 1).join("0");
+    if (!validEntry(e)) { logCut++; continue; }
+    if (e.cells && e.tiles) {
+      var blanks = e.blanks && e.blanks.length === e.cells.length ? e.blanks : new Array(e.cells.length + 1).join("0");
       for (var i = 0; i < e.cells.length; i++) board[e.cells[i]] = { l: e.tiles[i], blank: blanks[i] === "1" };
       cells = e.cells.slice();
     }
@@ -177,6 +206,21 @@ function evalScores(scoreA, scoreB) {
   return { share: tot > 0 ? a / tot : 0.5, lead: scoreA - scoreB, a: scoreA, b: scoreB };
 }
 
+/* Mirrors finalScores() in engine.ts: in "lose points" mode the totals that
+   decided the game are the raw scores minus the time penalty. */
+function penaltyPoints(tc, overMs) {
+  if (!tc || tc.expiry !== "points" || !tc.penalty || !(tc.penalty.perMs > 0)) return 0;
+  return Math.floor((overMs || 0) / tc.penalty.perMs) * tc.penalty.points;
+}
+function finalScores(r) {
+  var clk = r.clk || {};
+  if (!r.tc || r.tc.expiry !== "points") return { a: r.scoreA || 0, b: r.scoreB || 0 };
+  return {
+    a: (r.scoreA || 0) - penaltyPoints(r.tc, clk.overA),
+    b: (r.scoreB || 0) - penaltyPoints(r.tc, clk.overB),
+  };
+}
+
 var nameA, nameB;
 function nameOf(s) { return s === "A" ? nameA : nameB; }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" })[c]; }); }
@@ -184,8 +228,14 @@ function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function 
 function start() {
   nameA = (room.seatA && room.seatA.name) || "Player 1";
   nameB = (room.seatB && room.seatB.name) || "Player 2";
+  /* The WINNER'S OWN score first, not the higher of the two — a game won on
+     time (or on a points penalty) ends with the winner behind on the board, and
+     max-then-min credits them with the loser's points. Same bug the FlipDeck
+     page had. And the totals that decided it are the penalised ones. */
+  var fin = finalScores(room);
   var res = room.winner === "tie" ? "a tie"
-    : room.winner ? nameOf(room.winner) + " won " + Math.max(room.scoreA, room.scoreB) + "-" + Math.min(room.scoreA, room.scoreB)
+    : room.winner ? nameOf(room.winner) + " won "
+      + (room.winner === "A" ? fin.a : fin.b) + "-" + (room.winner === "A" ? fin.b : fin.a)
     : "still in progress";
   document.getElementById("sub").textContent = nameA + " vs " + nameB + " — " + res;
   document.getElementById("nA").textContent = nameA;
