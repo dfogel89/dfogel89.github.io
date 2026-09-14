@@ -31,6 +31,12 @@
         "paths": [
           "/superchess/*"
         ]
+      },
+      {
+        "appID": "K87H4YTGDW.com.dfogel.bartrivia",
+        "paths": [
+          "/bartrivia/*"
+        ]
       }
     ]
   }
