@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Join a FlipDeck game</title>
+<title>Join an Axis game</title>
 <style>
   :root { color-scheme: light dark; }
   body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
@@ -21,17 +21,17 @@
 </head>
 <body>
   <div class="card">
-    <h1>FlipDeck</h1>
+    <h1>Axis</h1>
     <p>You've been invited to a game.</p>
     <div class="code" id="code">----</div>
-    <p id="codeHint">Open FlipDeck and enter this code to join.</p>
+    <p id="codeHint">Open Axis and enter this code to join.</p>
     <a class="btn primary" id="openApp" href="#">Open in the app</a>
     <a class="btn store" id="ios" href="#" style="display:none">Get it on the App Store</a>
     <a class="btn store" id="android" href="#" style="display:none">Get it on Google Play</a>
-    <p class="hint">Don't have FlipDeck yet? Install it, then reopen this link or enter the code above.</p>
+    <p class="hint">Don't have Axis yet? Install it, then reopen this link or enter the code above.</p>
   </div>
   <script>
-    // TODO(launch): fill in the real store URLs for FlipDeck.
+    // TODO(launch): fill in the real store URLs for Axis.
     var IOS_STORE = "";      // https://apps.apple.com/app/id<APPLE_ID>
     var ANDROID_STORE = "";  // https://play.google.com/store/apps/details?id=com.dfogel.flipdeck
     var code = (new URLSearchParams(location.search).get("code") || "").replace(/[^0-9]/g, "").slice(0, 4);

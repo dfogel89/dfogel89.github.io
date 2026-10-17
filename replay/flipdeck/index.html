@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FlipDeck replay</title>
-<meta name="description" content="Watch a game of FlipDeck play out move by move.">
+<title>Axis replay</title>
+<meta name="description" content="Watch a game of Axis play out move by move.">
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -61,7 +61,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>FlipDeck</h1>
+  <h1>Axis</h1>
   <p class="sub" id="sub">Loading the game…</p>
   <div id="app" hidden>
     <div class="panel">
@@ -93,12 +93,12 @@
 </div>
 
 <script>
-/* FlipDeck replay viewer.
+/* Axis replay viewer.
 
    The room already lives on the server under flipdeck/rooms/<code> and the
    database is world-readable, so this page needs no key and no backend.
 
-   WHAT IT CAN AND CANNOT SHOW. FlipDeck splits every room: the board, the move
+   WHAT IT CAN AND CANNOT SHOW. Axis splits every room: the board, the move
    log, whose turn it is and the result are public, but each seat's HAND and DECK
    live under flipdeck/priv/<code>/<seat>, which this page deliberately does not
    read. So the replay shows the game as a spectator saw it — which is also why
@@ -116,7 +116,7 @@
    join a finished game. */
 
 var DB = "https://salad-bowl-3ba36-default-rtdb.firebaseio.com";
-/* FlipDeck's database rules are the HARDENED ones (database.rules.json in the
+/* Axis's database rules are the HARDENED ones (database.rules.json in the
    app repo), unlike the other games' still-open wildcard. A room is
    `".read": "auth != null"` — readable by any SIGNED-IN device that knows the
    code — so an anonymous fetch gets a flat 401 and this page has to sign in the
@@ -228,7 +228,7 @@ function flipsFor(b, p, r, c) {
   return out;
 }
 /* Mirrors engine.isLegal: empty, and either adjacent to one of ours or flipping
-   something. Adjacency alone is enough in FlipDeck, unlike Othello. */
+   something. Adjacency alone is enough in Axis, unlike Othello. */
 function isLegal(b, p, r, c) {
   if (b[r * 8 + c] !== 0) return false;
   for (var k = 0; k < DIRS.length; k++) {
